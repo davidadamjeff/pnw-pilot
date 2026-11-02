@@ -1,10 +1,10 @@
 [submodule "panda"]
   path = panda
-  url = ../pnw-panda.git
+	url = https://github.com/dirkpetersen/pnw-panda.git
   branch = master-pnw
 [submodule "opendbc"]
   path = opendbc_repo
-  url = ../pnw-opendbc.git
+	url = https://github.com/dirkpetersen/pnw-opendbc.git
   branch = master-pnw
 [submodule "msgq"]
   path = msgq_repo
