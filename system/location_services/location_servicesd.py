@@ -1792,6 +1792,92 @@ class SpeedCameras:
     return out
 
 
+# speedcam-se: monthly refresh of CAM_FILE from Trafikverket, only while on Wi-Fi (never on LTE). Needs the
+# driver's own free API key in CAM_KEY_FILE (device-local, mode 600, never in git). Background thread, so the
+# network can never stall the 1 Hz main loop; any failure keeps the existing file and retries a day later.
+CAM_KEY_FILE = "/data/pnw/location/trafikverket.key"
+CAM_API_URL = "https://api.trafikinfo.trafikverket.se/v2/data.json"
+CAM_REFRESH_AGE_S = 30 * 24 * 3600
+CAM_RETRY_S = 24 * 3600
+CAM_MIN_COUNT = 500          # sanity floor: Sweden has ~2,800 fixed cameras; fewer means a bad response
+
+
+class CameraRefresher:
+  def __init__(self):
+    self._thread = None
+    self._next_try = 0.0
+
+  @staticmethod
+  def _on_wifi() -> bool:
+    try:
+      with open("/proc/net/route") as f:
+        for line in f.readlines()[1:]:
+          p = line.split()
+          if len(p) > 1 and p[1] == "00000000":
+            return p[0].startswith("wlan")
+    except OSError:
+      pass
+    return False
+
+  def ensure(self):
+    now = time.monotonic()
+    if now < self._next_try or (self._thread is not None and self._thread.is_alive()):
+      return
+    try:
+      age = time.time() - os.path.getmtime(CAM_FILE)  # noqa: TID251 -- file age vs wall clock
+    except OSError:
+      age = float("inf")
+    if age < CAM_REFRESH_AGE_S or not os.path.exists(CAM_KEY_FILE) or not self._on_wifi():
+      self._next_try = now + 3600.0                     # re-check hourly
+      return
+    self._next_try = now + CAM_RETRY_S
+    self._thread = threading.Thread(target=self._fetch, daemon=True)
+    self._thread.start()
+
+  @staticmethod
+  def _fetch():
+    import re
+    tmp = CAM_FILE + ".tmp"
+    try:
+      with open(CAM_KEY_FILE) as f:
+        key = f.read().strip()
+      if not re.fullmatch(r"[0-9a-fA-F]{16,64}", key):
+        raise ValueError("bad key file")
+      body = (f'<REQUEST><LOGIN authenticationkey="{key}"/>'
+              '<QUERY objecttype="TrafficSafetyCamera" schemaversion="1"/></REQUEST>').encode()
+      req = urllib.request.Request(CAM_API_URL, data=body, headers={"Content-Type": "text/xml",
+                                                                   "User-Agent": "pnw-location/1.0"})
+      with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+      res = data["RESPONSE"]["RESULT"][0]
+      if "ERROR" in res:
+        raise ValueError(f"trafikverket error: {res['ERROR']}")
+      out = []
+      for x in res.get("TrafficSafetyCamera", []):
+        if x.get("Deleted"):
+          continue
+        m = re.match(r"POINT \(([-\d.]+) ([-\d.]+)\)", (x.get("Geometry") or {}).get("WGS84", ""))
+        if not m:
+          continue
+        out.append({"id": x.get("Id"), "lat": round(float(m[2]), 6), "lon": round(float(m[1]), 6),
+                    "bearing": x.get("Bearing"), "name": x.get("Name", ""), "road": x.get("RoadNumber", "")})
+      if len(out) < CAM_MIN_COUNT:
+        raise ValueError(f"only {len(out)} cameras in response")
+      with open(tmp, "w") as f:
+        json.dump({"source": "Trafikverket TrafficSafetyCamera", "count": len(out), "cameras": out}, f,
+                  ensure_ascii=False, separators=(",", ":"))
+        f.flush()
+        os.fsync(f.fileno())
+      os.replace(tmp, CAM_FILE)                         # atomic; SpeedCameras.reload() picks it up on mtime
+      cloudlog.info("location_services: speed cameras refreshed (%d)", len(out))
+    except Exception as e:
+      cloudlog.warning("location_services: speed camera refresh failed (%s)", type(e).__name__)
+      try:
+        os.remove(tmp)
+      except OSError:
+        pass
+
+
 def _line_camera(cams, lat, lon, brg, path):
   """Nearest speed camera AHEAD on our road, monitoring OUR direction. Returns (cam, dist_mi) or None."""
   if brg is None:
@@ -1830,6 +1916,7 @@ def main():
   sc_hold = _Hold(POI_HOLD_S)                # Tesla: anti-flicker for the Supercharger side of the alternation
   other_hold = _Hold(POI_HOLD_S)             # Tesla: anti-flicker for the other-charger side
   cams = SpeedCameras()                      # speedcam-se
+  cam_refresh = CameraRefresher()            # speedcam-se: monthly, Wi-Fi only
   cam_hold = _Hold(POI_HOLD_S)
   ev_recede = _RecedeFilter(EV_RECEDE_MI, EV_TRACK_MI)   # drop chargers left >1 mi behind -> show the next-nearest
   police_recede = _PoliceRecede(POLICE_RECEDE_MI)        # live distance + clear-when-passed for police reports
@@ -1928,6 +2015,7 @@ def main():
 
     # speedcam-se: speed camera ahead (any road type, needs GPS + heading). Display-only.
     try:
+      cam_refresh.ensure()
       cams.reload()
       cm = cam_hold.update(_line_camera(cams, lat, lon, brg, path), now, lat, lon) if have_gps else None
       if not have_gps:
