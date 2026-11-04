@@ -47,3 +47,18 @@ def test_camera_driver_override_dismisses():
   _settle(c, SET90, V90)
   out = _settle(c, 100 * KMH, V90)                                    # driver raises the set
   assert abs(out - 100 * KMH) < 1e-6
+
+
+def test_camera_dismissal_survives_gps_blip():
+  c = _c(cam=_cam(300))
+  _settle(c, SET90, V90)
+  _settle(c, 100 * KMH, V90)                                          # driver dismisses
+  c._camera = None                                                    # GPS blip
+  _cap(c, 100 * KMH, V90)
+  c._camera = _cam(250)                                               # same camera again
+  assert abs(_settle(c, 100 * KMH, V90) - 100 * KMH) < 1e-6
+
+
+def test_camera_without_id_ignored():
+  c = _c(cam={"state": "ok", "dist_m": 200})
+  assert _cap(c, SET90, V90) == SET90

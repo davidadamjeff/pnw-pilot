@@ -132,6 +132,21 @@ def pairing_host(params) -> str:
   return PAIRING_HOST.get(backend, PAIRING_HOST[BACKEND_PNW])
 
 
+_HOST_TEXT_CACHE: list = []
+
+
+def with_pairing_host(text: str) -> str:
+  """commabackend-se: swap the hardcoded PNW connect host in a UI string for the selected backend's pairing host.
+  The backend only changes on reboot, so the host is resolved once per process. Never raises (UI render path)."""
+  try:
+    if not _HOST_TEXT_CACHE:
+      from openpilot.common.params import Params
+      _HOST_TEXT_CACHE.append(pairing_host(Params()))
+    return text.replace(PAIRING_HOST[BACKEND_PNW], _HOST_TEXT_CACHE[0])
+  except Exception:
+    return text
+
+
 def _target_token(backend: str, url: str) -> str:
   # The active-backend token distinguishes DIFFERENT Custom URLs ("custom:<hash>"), so editing the
   # URL while staying on Custom still counts as a backend switch and re-reconciles the dongle ID.

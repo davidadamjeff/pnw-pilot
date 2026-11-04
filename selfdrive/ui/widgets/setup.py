@@ -44,7 +44,8 @@ class SetupWidget(Widget):
     y += 113  # 75 + 38 spacing
 
     # Description
-    desc = tr("Pair your device with comma connect (comma-connect.aws.internetchen.de) and claim your comma prime offer.")
+    from openpilot.common.connect_backend import with_pairing_host  # commabackend-se
+    desc = with_pairing_host(tr("Pair your device with comma connect (comma-connect.aws.internetchen.de) and claim your comma prime offer."))
     light_font = gui_app.font(FontWeight.NORMAL)
     wrapped = wrap_text(light_font, desc, 50, int(w))
     for line in wrapped:

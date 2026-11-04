@@ -17,6 +17,7 @@ from openpilot.system.ui.widgets.html_render import HtmlModal
 from openpilot.system.ui.widgets.list_view import text_item, button_item, dual_button_item
 from openpilot.system.ui.widgets.option_dialog import MultiOptionDialog
 from openpilot.system.ui.widgets.scroller_tici import Scroller
+from openpilot.common.connect_backend import with_pairing_host  # commabackend-se
 
 # Description constants
 DESCRIPTIONS = {
@@ -42,7 +43,7 @@ class DeviceLayout(Widget):
     ui_state.add_offroad_transition_callback(self._offroad_transition)
 
   def _initialize_items(self):
-    self._pair_device_btn = button_item(lambda: tr("Pair Device"), lambda: tr("PAIR"), lambda: tr(DESCRIPTIONS['pair_device']),
+    self._pair_device_btn = button_item(lambda: tr("Pair Device"), lambda: tr("PAIR"), lambda: with_pairing_host(tr(DESCRIPTIONS['pair_device'])),
                                         callback=lambda: gui_app.push_widget(PairingDialog()))
     self._pair_device_btn.set_visible(lambda: not ui_state.prime_state.is_paired())
 

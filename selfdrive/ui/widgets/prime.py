@@ -1,4 +1,5 @@
 import pyray as rl
+from openpilot.common.connect_backend import with_pairing_host  # commabackend-se
 
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight
@@ -18,7 +19,7 @@ class PrimeWidget(Widget):
     if ui_state.prime_state.is_prime():
       self._render_for_prime_user(rect)
     else:
-      self._render_for_non_prime_users(rect)
+      pass  # commabackend-se: no comma prime upsell ("Upgrade Now") for non-subscribers; left column stays empty
 
   def _render_for_non_prime_users(self, rect: rl.Rectangle):
     """Renders the advertisement for non-Prime users."""
@@ -35,7 +36,7 @@ class PrimeWidget(Widget):
     # Description with wrapping
     desc_y = y + 140
     font = gui_app.font(FontWeight.NORMAL)
-    wrapped_text = "\n".join(wrap_text(font, tr("Become a comma prime member at comma-connect.aws.internetchen.de"), 56, int(w)))
+    wrapped_text = "\n".join(wrap_text(font, with_pairing_host(tr("Become a comma prime member at comma-connect.aws.internetchen.de")), 56, int(w)))
     text_size = measure_text_cached(font, wrapped_text, 56)
     rl.draw_text_ex(font, wrapped_text, rl.Vector2(x, desc_y), 56, 0, rl.WHITE)
 

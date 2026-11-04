@@ -531,10 +531,11 @@ class SpeedAdjustController:
     """speedcam-se: target = posted limit when a camera is within CAM_ENGAGE_S of driving, else None."""
     c = self._camera
     if c is None:
-      self._cam_active_id = None
-      self._cam_suppressed_id = None
+      self._cam_active_id = None           # keep _cam_suppressed_id: a GPS blip must not undo a dismissal
       return None
     cid = c.get("id")
+    if cid is None:
+      return None                          # unidentifiable camera: never latch or suppress on it
     if self._cam_suppressed_id is not None and cid == self._cam_suppressed_id:
       return None
     try:
@@ -543,7 +544,7 @@ class SpeedAdjustController:
       return None
     if not math.isfinite(dist_m) or dist_m < 0.0:
       return None
-    if cid != self._cam_active_id and dist_m / max(v_ego, 1.0) > CAM_ENGAGE_S:
+    if cid != self._cam_active_id and dist_m / max(v_ego, 1.0) > CAM_ENGAGE_S:  # (cid is never None here)
       return None                          # not close enough yet
     if self._sl <= 0.0:
       return None                          # no posted limit -> no basis for a target
