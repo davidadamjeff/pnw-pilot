@@ -1,0 +1,86 @@
+# Daily: merge Dirk's 3testpnw into david/3testpnw-se, check that our Swedish changes survived, and push only
+# if everything is green (the car then updates as usual). On a conflict or a failed check nothing reaches the
+# car: a PR is opened in this fork instead (GitHub emails you).
+name: sync from dirk
+
+on:
+  schedule:
+    - cron: "17 3 * * *"      # 03:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency: sync-dirk
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BRANCH: david/3testpnw-se
+      UPSTREAM: https://github.com/dirkpetersen/pnw-pilot.git
+      UPSTREAM_BRANCH: 3testpnw
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: david/3testpnw-se
+          fetch-depth: 0
+          filter: blob:none
+          submodules: false
+          lfs: false
+
+      - name: Merge Dirk's branch
+        id: merge
+        run: |
+          git config user.name "sync-dirk bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add dirk "$UPSTREAM"
+          git fetch --no-tags --filter=blob:none dirk "$UPSTREAM_BRANCH"
+          echo "old=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "upstream=$(git rev-parse --short FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor FETCH_HEAD HEAD; then
+            echo "status=uptodate" >> "$GITHUB_OUTPUT"; echo "Already up to date."; exit 0
+          fi
+          if git -c lfs.fetchexclude='*' merge --no-edit -m "Merge dirk/$UPSTREAM_BRANCH $(git rev-parse --short FETCH_HEAD) into $BRANCH" FETCH_HEAD; then
+            echo "status=merged" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > /tmp/conflicts.txt || true
+            git merge --abort || true
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check our changes survived
+        id: check
+        if: steps.merge.outputs.status == 'merged'
+        run: |
+          set +e
+          python3 .github/scripts/check_se.py "${{ steps.merge.outputs.old }}" > /tmp/check.txt 2>&1
+          rc=$?
+          cat /tmp/check.txt
+          echo "ok=$([ $rc -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Push to the car's branch
+        if: steps.merge.outputs.status == 'merged' && steps.check.outputs.ok == 'true'
+        run: git push origin "HEAD:$BRANCH"
+
+      - name: Open a PR instead (conflict or failed check)
+        if: steps.merge.outputs.status == 'conflict' || (steps.merge.outputs.status == 'merged' && steps.check.outputs.ok != 'true')
+        run: |
+          up="${{ steps.merge.outputs.upstream }}"
+          head="dirk-sync/$up"
+          if [ "${{ steps.merge.outputs.status }}" = "conflict" ]; then
+            git push -f origin "FETCH_HEAD:refs/heads/$head"
+            { echo "Dirk's \`$UPSTREAM_BRANCH\` ($up) does **not merge cleanly** into \`$BRANCH\`."; echo;
+              echo "Conflicting files:"; sed 's/^/- `/; s/$/`/' /tmp/conflicts.txt; echo;
+              echo "Nothing was pushed to the car. Ask Claude to resolve the merge."; } > /tmp/body.md
+          else
+            git push -f origin "HEAD:refs/heads/$head"
+            { echo "Dirk's \`$UPSTREAM_BRANCH\` ($up) merged, but **checks failed**. Nothing was pushed to the car."; echo;
+              echo '```'; cat /tmp/check.txt; echo '```'; } > /tmp/body.md
+          fi
+          if gh pr list --head "$head" --state open --json number --jq 'length' | grep -q '^0$'; then
+            gh pr create --base "$BRANCH" --head "$head" --title "Sync from Dirk ($up) needs attention" --body-file /tmp/body.md
+          fi
