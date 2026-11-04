@@ -75,6 +75,7 @@ class LocationServicesStatusRenderer(Widget):
     self._banner_uuid = None
     self._banner_start = 0.0
     self._cached_layout = None            # (lines, fs, line_h, box_w, box_h) — rebuilt at poll time, not per frame
+    self._metric = False                  # speedcam-se
 
   def _update_state(self):
     now = time.monotonic()
@@ -88,6 +89,7 @@ class LocationServicesStatusRenderer(Widget):
     try:
       st = self._mem.get("LocationServices", return_default=True)
       self._st = st if isinstance(st, dict) else {}
+      self._metric = ui_state.params.get_bool("IsMetric")   # speedcam-se
     except Exception:
       self._st = {}
     # Build the wrapped-line layout HERE (5 Hz) instead of in _render (20 Hz): the string assembly +
@@ -183,6 +185,27 @@ class LocationServicesStatusRenderer(Widget):
       return txt + self._town(e.get("town")), _C.GREEN
     return "EV fast  -", _C.DIM
 
+  # speedcam-se: Trafikverket fixed speed camera ahead. Shown only when one is ahead (no "-" placeholder).
+  def _camera_line(self):
+    c = self._st.get("camera", {})
+    if c.get("state") != "ok":
+      return None
+    d = c.get("dist_m")
+    if d is None:
+      dist = ""
+    elif self._metric:
+      dist = f"{d / 1000.0:.1f} km" if d >= 1000 else f"{int(round(d / 50.0) * 50)} m"
+    else:
+      dist = self._dist_text(d / 1609.344)
+    txt = f"Camera   {dist}"
+    road = c.get("road") or ""
+    name = c.get("name") or ""
+    label = " ".join(x for x in (road, name) if x)
+    if label:
+      txt += f"  {label}"
+    color = _C.RED if (d is not None and d <= 300) else _C.ORANGE
+    return txt, color
+
   def _wrap_px(self, text, font, fs, max_w):
     """Greedy PIXEL-measured wrap to max_w, breaking only at space runs and hanging-indenting
     continuation lines (_CONT_INDENT). Operates on string slices (not split/rejoin) so the
@@ -227,6 +250,9 @@ class LocationServicesStatusRenderer(Widget):
     # the "Police -" / reason line otherwise.
     if freeway or self._st.get("police", {}).get("state") == "alert":
       content.append((*self._police_line(), self.font))
+    cam = self._camera_line()                  # speedcam-se
+    if cam is not None:
+      content.append((*cam, self.font))
     content.append((*self._rest_line(), self.font))
     content.append((*self._ev_line(), self.font))
 

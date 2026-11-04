@@ -41,14 +41,19 @@ BACKEND_PNW = "pnw"
 BACKEND_KONIK = "konik"
 BACKEND_CUSTOM = "custom"
 BACKEND_OFFLINE = "offline"
+# commabackend-se: comma.ai's own backend (api.commadotai.com / athena.comma.ai / connect.comma.ai).
+# Proactive uploads are limited to what comma accepts unrequested (qlog/qcamera/boot/crash); HD video and
+# rlogs go up only when requested from comma connect (athena), exactly like stock openpilot. See uploader.py.
+BACKEND_COMMA = "comma"
 
 # Index order matches the ConnectBackend param and the Network -> Advanced selector buttons.
-BACKENDS = (BACKEND_PNW, BACKEND_KONIK, BACKEND_CUSTOM, BACKEND_OFFLINE)
+BACKENDS = (BACKEND_PNW, BACKEND_KONIK, BACKEND_CUSTOM, BACKEND_OFFLINE, BACKEND_COMMA)
 
 PAIRING_HOST = {
   BACKEND_PNW: "comma-connect.aws.internetchen.de",  # connect-url2pnw: the self-hosted connect web UI
   BACKEND_KONIK: "stable.konik.ai",
   BACKEND_OFFLINE: "pairing.invalid",  # RFC 2606 .invalid never resolves
+  BACKEND_COMMA: "connect.comma.ai",  # commabackend-se
 }
 
 # Fixed backends cache their dongle ID in one param each; Custom URLs share a JSON-dict param
@@ -134,6 +139,8 @@ def _target_token(backend: str, url: str) -> str:
 
 
 def _cache_read(params, token: str) -> str | None:
+  if token == BACKEND_COMMA:  # commabackend-se
+    token = BACKEND_CUSTOM + ":" + BACKEND_COMMA
   if token in CACHE_PARAM:
     return params.get(CACHE_PARAM[token])
   if token.startswith(BACKEND_CUSTOM + ":"):
@@ -147,6 +154,8 @@ def _cache_read(params, token: str) -> str | None:
 
 
 def _cache_write(params, token: str, dongle_id: str) -> None:
+  if token == BACKEND_COMMA:  # commabackend-se
+    token = BACKEND_CUSTOM + ":" + BACKEND_COMMA
   if token in CACHE_PARAM:
     params.put(CACHE_PARAM[token], dongle_id)
   elif token.startswith(BACKEND_CUSTOM + ":"):

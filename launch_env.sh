@@ -46,6 +46,10 @@ CONNECT_CUSTOM_HOST="${CONNECT_CUSTOM_HOST%%/*}"
 if [ "$CONNECT_BACKEND" = "1" ]; then
   export API_HOST="https://api.konik.ai"
   export ATHENA_HOST="wss://athena.konik.ai"
+elif [ "$CONNECT_BACKEND" = "4" ]; then
+  # commabackend-se: comma.ai's own backend
+  export API_HOST="https://api.commadotai.com"
+  export ATHENA_HOST="wss://athena.comma.ai"
 elif [ "$CONNECT_BACKEND" = "3" ]; then
   export API_HOST="https://api.invalid"
   export ATHENA_HOST="wss://athena.invalid"

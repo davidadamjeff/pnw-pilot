@@ -140,6 +140,17 @@ _firehose_err_t: float | None = None
 _firehose_err_n = 0
 
 
+def _comma_backend(params=None) -> bool:
+  """commabackend-se: True when ConnectBackend selects comma.ai. comma answers 412 to every UNREQUESTED rlog/
+  HD-video upload and to unknown paths (pnwlogs/), so in this mode pass 2 and the pnw-log tier are off and the
+  deleter must not pin segments waiting for uploads that will never happen. Requested uploads go via athena."""
+  try:
+    from openpilot.common.connect_backend import get_connect_backend, BACKEND_COMMA
+    return get_connect_backend(params if params is not None else Params()) == BACKEND_COMMA
+  except Exception:
+    return False
+
+
 def uploadable_firehose_files(params=None) -> set[str]:
   """uploadprio2pnw: the pass-2 files the uploader is EVER going to send, given the permanent-skip
   toggles. The DELETER uses this for its keep-un-uploaded-last ordering: a file that will never be
@@ -157,6 +168,8 @@ def uploadable_firehose_files(params=None) -> set[str]:
   global _firehose_err_t, _firehose_err_n
   try:
     p = params if params is not None else Params()
+    if _comma_backend(p):  # commabackend-se: nothing goes up proactively in pass 2
+      return set()
     if p.get_bool(SKIP_WIDE_PARAM):
       return FIREHOSE_FILES - WIDE_CAMERA_FILES
   except Exception as e:
@@ -459,6 +472,7 @@ class Uploader:
 
     self.immediate_folders = ["crash/", "boot/"]
     self.immediate_priority = {"qlog": 0, "qlog.zst": 0, "qcamera.ts": 1}
+    self._comma = _comma_backend()  # commabackend-se: backend changes take effect on reboot only
     self._defer_hd = False   # DeferHDVideoUpload snapshot, refreshed per pass-2 selection
     self._skip_wide = False  # uploadprio2pnw: SkipWideCameraUpload snapshot, refreshed per listing
     self._retry_after: dict[str, float] = {}   # uploadretry2pnw: fn -> monotonic time it may retry
@@ -889,7 +903,7 @@ class Uploader:
     # the idle 60 s backoff would never engage. Both halves are pinned by
     # TestDriveDataStillGoesFirst.
     for name, key, fn in upload_files:
-      if key.startswith(PNW_LOG_PREFIXES):
+      if key.startswith(PNW_LOG_PREFIXES) and not self._comma:  # commabackend-se
         return name, key, fn
 
     # Tiers 2 and 3: ALL qlogs, then ALL qcameras (stock took them segment by segment).
@@ -909,6 +923,8 @@ class Uploader:
     # this secures it in hours instead of behind a day of video. The oldest-first walk is preserved
     # within each class, and the first non-priority file found is the fallback for when no rlog is
     # left, so behaviour with an rlog-free backlog is byte-identical to before.
+    if self._comma:  # commabackend-se: comma rejects unrequested rlog/video
+      return None
     fallback: tuple[str, str, str] | None = None
     for name, key, fn in self.list_upload_files(metered, pass2=True):
       if name in PASS2_PRIORITY_FILES:

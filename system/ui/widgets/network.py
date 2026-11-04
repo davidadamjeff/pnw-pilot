@@ -171,13 +171,13 @@ class AdvancedNetworkSettings(Widget):
       _backend_selected = int(self._params.get("ConnectBackend", return_default=True) or 0)
     except Exception:
       _backend_selected = 0
-    if not 0 <= _backend_selected <= 3:
+    if not 0 <= _backend_selected <= 4:  # commabackend-se: 4 = comma.ai
       _backend_selected = 0
-    self._connect_backend_action = MultipleButtonAction([lambda: tr("PNW"), lambda: tr("Konik"), lambda: tr("Custom"), lambda: tr("Offline")],
-                                                        230, _backend_selected, callback=self._set_connect_backend)
+    self._connect_backend_action = MultipleButtonAction([lambda: tr("PNW"), lambda: tr("Konik"), lambda: tr("Custom"), lambda: tr("Offline"), lambda: tr("comma")],
+                                                        200, _backend_selected, callback=self._set_connect_backend)
     connect_backend_btn = ListItem(
       lambda: tr("Connect Backend"),
-      description=lambda: tr("PNW is this fork's self-hosted connect; Offline disables telemetry. Takes effect after reboot."),
+      description=lambda: tr("PNW is this fork's self-hosted connect; comma is comma.ai's official connect (logs and low-res video upload automatically, HD video only when requested in comma connect); Offline disables telemetry. Takes effect after reboot."),
       action_item=self._connect_backend_action)
 
     # connectsel2pnw: Custom backend base URL. NO description= — a ListItem with both a description

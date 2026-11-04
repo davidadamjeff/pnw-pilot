@@ -1733,6 +1733,88 @@ def _pick_ev(items, on_freeway, lat, lon, brg, path):
   return _nearest_within(items, lat, lon, SURFACE_RANGE_MI)
 
 
+# ----------------------------- speed cameras (speedcam-se) -----------------------------------------
+# speedcam-se: fixed speed cameras (ATK) from Trafikverket's open TrafficSafetyCamera data. Display-only.
+# The data file lives OUTSIDE the git tree (survives updates) and is refreshed from a Mac with the
+# Trafikverket key -- no API key ever lives on the device.
+CAM_FILE = "/data/pnw/location/speed_cameras_se.json"
+CAM_MAX_DIST_M = 1500.0      # start showing a camera this far ahead (straight line)
+CAM_CONE_DEG = 35.0          # camera must be within this angle of our heading (i.e. on the road ahead)
+CAM_MAX_PERP_M = 60.0        # when the mapd path is available: max offset from our path
+CAM_DIR_TOL_DEG = 60.0       # camera's monitored travel direction must match our heading within this
+# Trafikverket `Bearing` is where the camera POINTS; Swedish ATK photographs oncoming fronts, so the
+# monitored travel direction is the opposite. Set to 0.0 if field drives show the opposite convention.
+CAM_BEARING_OFFSET_DEG = 180.0
+
+
+class SpeedCameras:
+  """Loads CAM_FILE (reloaded on mtime change) and buckets cameras by 0.1 deg latitude."""
+  def __init__(self):
+    self._sig = None
+    self._buckets: dict = {}
+    self.count = 0
+
+  def reload(self):
+    try:
+      st = os.stat(CAM_FILE)
+      sig = (st.st_mtime, st.st_size)
+    except OSError:
+      self._sig, self._buckets, self.count = None, {}, 0
+      return
+    if sig == self._sig:
+      return
+    try:
+      with open(CAM_FILE) as f:
+        data = json.load(f)
+      buckets: dict = {}
+      n = 0
+      for c in data.get("cameras", []):
+        try:
+          item = {"lat": float(c["lat"]), "lon": float(c["lon"]), "name": c.get("name") or "",
+                  "road": c.get("road") or "", "id": c.get("id")}
+          b = c.get("bearing")
+          item["dir"] = (float(b) + CAM_BEARING_OFFSET_DEG) % 360.0 if b is not None else None
+        except (KeyError, TypeError, ValueError):
+          continue
+        buckets.setdefault(int(math.floor(item["lat"] * 10)), []).append(item)
+        n += 1
+      self._sig, self._buckets, self.count = sig, buckets, n
+      cloudlog.info("location_services: loaded %d speed cameras", n)
+    except Exception:
+      cloudlog.exception("location_services: speed camera file unreadable")
+      self._sig, self._buckets, self.count = sig, {}, 0
+
+  def near(self, lat):
+    b = int(math.floor(lat * 10))
+    out = []
+    for k in (b - 1, b, b + 1):
+      out.extend(self._buckets.get(k, ()))
+    return out
+
+
+def _line_camera(cams, lat, lon, brg, path):
+  """Nearest speed camera AHEAD on our road, monitoring OUR direction. Returns (cam, dist_mi) or None."""
+  if brg is None:
+    return None
+  best, best_m = None, None
+  for c in cams.near(lat):
+    if abs(c["lon"] - lon) > 0.06:                      # ~3 km at Swedish latitudes
+      continue
+    d = geo.haversine_m(lat, lon, c["lat"], c["lon"])
+    if d > CAM_MAX_DIST_M:
+      continue
+    if c["dir"] is not None and abs(geo.normalize180(c["dir"] - brg)) > CAM_DIR_TOL_DEG:
+      continue                                         # watches the other direction of travel
+    a = geo.ahead(path, lat, lon, brg, c["lat"], c["lon"], cone_deg=CAM_CONE_DEG, max_fallback_m=CAM_MAX_DIST_M)
+    if a is None:
+      continue
+    if a["source"] == "path" and a["perp_m"] > CAM_MAX_PERP_M:
+      continue                                         # beside a different road
+    if best_m is None or d < best_m:
+      best, best_m = c, d
+  return (best, round(best_m / geo.M_PER_MILE, 3)) if best is not None else None
+
+
 # ----------------------------- main -----------------------------------------------------------------
 def main():
   params = Params()
@@ -1747,6 +1829,8 @@ def main():
   ev_hold = _Hold(POI_HOLD_S)
   sc_hold = _Hold(POI_HOLD_S)                # Tesla: anti-flicker for the Supercharger side of the alternation
   other_hold = _Hold(POI_HOLD_S)             # Tesla: anti-flicker for the other-charger side
+  cams = SpeedCameras()                      # speedcam-se
+  cam_hold = _Hold(POI_HOLD_S)
   ev_recede = _RecedeFilter(EV_RECEDE_MI, EV_TRACK_MI)   # drop chargers left >1 mi behind -> show the next-nearest
   police_recede = _PoliceRecede(POLICE_RECEDE_MI)        # live distance + clear-when-passed for police reports
   rk = Ratekeeper(TICK_HZ, print_delay_threshold=None)
@@ -1841,6 +1925,20 @@ def main():
         out["ev"] = ev
       else:
         out["ev"] = {"state": "nodata"}
+
+    # speedcam-se: speed camera ahead (any road type, needs GPS + heading). Display-only.
+    try:
+      cams.reload()
+      cm = cam_hold.update(_line_camera(cams, lat, lon, brg, path), now, lat, lon) if have_gps else None
+      if not have_gps:
+        cam_hold.poi = None
+      elif cm is not None and brg is not None and           abs(geo.normalize180(geo.bearing_deg(lat, lon, cm[0]["lat"], cm[0]["lon"]) - brg)) > 90.0:
+        cam_hold.poi, cm = None, None                  # held camera is now behind us -> passed
+      out["camera"] = ({"state": "ok", "dist_m": int(round(geo.haversine_m(lat, lon, cm[0]["lat"], cm[0]["lon"]) / 10.0) * 10), "name": cm[0].get("name", ""),
+                        "road": cm[0].get("road", ""), "id": cm[0].get("id")} if cm else {"state": "nodata"})
+    except Exception:
+      cloudlog.exception("location_services: speed camera line failed")
+      out["camera"] = {"state": "nodata"}
 
     # reason-everywhere (driver req 2026-08-13): the police-POLL state reason (speed <Nmph / budget
     # exceeded / daily limit / no source) is a diagnostic -- surface it on the police line even off a

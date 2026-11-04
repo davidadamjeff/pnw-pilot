@@ -137,6 +137,10 @@ from openpilot.common.swaglog import cloudlog
 
 MPH_TO_MS = 0.44704
 MILE_M = 1609.344
+# speedcam-se: fixed speed camera (Trafikverket ATK) slowdown. With AutoSpeedReduce >= 1, ease down to the
+# posted limit (no margin) once a camera on our road/direction is ~CAM_ENGAGE_S ahead, hold until it is passed
+# (location_servicesd drops it), then release. No posted limit -> no cap. A manual set change dismisses it.
+CAM_ENGAGE_S = 20.0
 
 # police
 POLICE_MARGIN = 5.0 * MPH_TO_MS          # target = posted limit + 5 mph
@@ -298,6 +302,9 @@ class SpeedAdjustController:
       self.mem_params = None
     self._long_ok = bool(getattr(CP, "openpilotLongitudinalControl", False))
     self._mode = 0
+    self._camera = None              # speedcam-se: LocationServices camera line
+    self._cam_active_id = None       # camera currently capping
+    self._cam_suppressed_id = None   # camera the driver dismissed with a manual set change
     self._mode_err_t = None      # silentexc2pnw: monotonic time of the last logged AutoSpeedReduce read failure (None = never)
     self._mode_err_n = 0         # silentexc2pnw: failed AutoSpeedReduce reads since that log line
     self._sl = 0.0                # current posted limit (m/s); 0 = unknown
@@ -509,6 +516,40 @@ class SpeedAdjustController:
         self._police_err_n = 0
     return None
 
+  def _read_camera(self):
+    """speedcam-se: the camera line from LocationServices, or None. Never raises (plannerd)."""
+    try:
+      raw = self.mem_params.get("LocationServices", return_default=True) if self.mem_params is not None else None
+      if isinstance(raw, (bytes, str)):
+        raw = json.loads(raw)
+      c = raw.get("camera") if isinstance(raw, dict) else None
+      return c if isinstance(c, dict) and c.get("state") == "ok" else None
+    except Exception:
+      return None
+
+  def _camera_cap(self, v_ego: float):
+    """speedcam-se: target = posted limit when a camera is within CAM_ENGAGE_S of driving, else None."""
+    c = self._camera
+    if c is None:
+      self._cam_active_id = None
+      self._cam_suppressed_id = None
+      return None
+    cid = c.get("id")
+    if self._cam_suppressed_id is not None and cid == self._cam_suppressed_id:
+      return None
+    try:
+      dist_m = float(c.get("dist_m"))
+    except (TypeError, ValueError):
+      return None
+    if not math.isfinite(dist_m) or dist_m < 0.0:
+      return None
+    if cid != self._cam_active_id and dist_m / max(v_ego, 1.0) > CAM_ENGAGE_S:
+      return None                          # not close enough yet
+    if self._sl <= 0.0:
+      return None                          # no posted limit -> no basis for a target
+    self._cam_active_id = cid              # latched until this camera is passed
+    return self._sl
+
   def _read_inputs(self):
     try:
       self._mode = int(self.params.get("AutoSpeedReduce", return_default=True) or 0)
@@ -528,6 +569,7 @@ class SpeedAdjustController:
         self._mode_err_n = 0
     self._sl = self._read_speed_limit()
     self._police = self._read_police()
+    self._camera = self._read_camera()  # speedcam-se
     self._la_mode = self._read_la_mode()
     self._next_raw = self._read_next_limit()
     self._update_announcement()
@@ -1341,6 +1383,9 @@ class SpeedAdjustController:
         # suppressed a pending, not-yet-latched police alert whenever the driver overrode an active
         # limit trim. The limit-drop cap itself still releases unconditionally below (_sl_ref/_ratio
         # re-anchor + _cap_out=None are OUTSIDE this gate).
+        if self._cam_active_id is not None:   # speedcam-se: the driver dismissed this camera's slowdown
+          self._cam_suppressed_id = self._cam_active_id
+          self._cam_active_id = None
         if self._police_latched:
           self._police_suppressed = True
           _capsrc = self._police.get("cap") if isinstance(self._police, dict) else None
@@ -1428,6 +1473,9 @@ class SpeedAdjustController:
     pc = self._police_cap(v_cruise_set, v_ego)   # modes 1 and 2
     if pc is not None:
       caps.append(pc)
+    cc = self._camera_cap(v_ego)                 # speedcam-se: modes 1 and 2
+    if cc is not None:
+      caps.append(cc)
     # speedanchor2pnw (F3): re-anchor the limit-drop baseline whenever the feature is active (mode 1 or
     # 2) — not just when the drop-cap itself is computed (mode 2 only) — so it never goes stale across
     # an AutoSpeedReduce 1→2 switch.

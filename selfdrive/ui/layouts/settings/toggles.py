@@ -60,7 +60,8 @@ DESCRIPTIONS = {
     "Automatically reduce your cruise speed. Off = no change. Police = when a police report is about " +
     "30 seconds ahead, ease down to the speed limit + 5 mph, then return to your set speed once past. " +
     "Police + Limits = also lower your speed by the same percentage the posted limit drops (and restore " +
-    "it when the limit rises). Only reduces speed, never raises it; requires openpilot longitudinal."
+    "it when the limit rises). Both modes also ease down to the posted limit about 20 seconds before a fixed " +
+    "speed camera (Trafikverket data, Sweden). Only reduces speed, never raises it; requires openpilot longitudinal."
   ),
   'RecordFront': tr_noop("Upload data from the driver facing camera and help improve the driver monitoring algorithm."),
   "IsMetric": tr_noop("Display speed in km/h instead of mph."),
