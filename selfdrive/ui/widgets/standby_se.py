@@ -125,7 +125,7 @@ class StandbyInfo(Widget):
       if c.calStatus == log.LiveCalibrationData.Status.uncalibrated:
         return f"Kalibrerar... {c.calPerc}%", AMBER
       pitch, yaw = math.degrees(c.rpyCalib[1]), math.degrees(c.rpyCalib[2])
-      return (f"Kalibrerad: {abs(pitch):.1f}° {'ner' if pitch > 0 else 'upp'}, "
+      return (f"Kalibrerad: {abs(pitch):.1f}° {'ner' if pitch > 0 else 'upp'}, " +
               f"{abs(yaw):.1f}° {'vänster' if yaw > 0 else 'höger'}"), GREEN
     except Exception:
       cloudlog.exception("standby-se: invalid CalibrationParams")

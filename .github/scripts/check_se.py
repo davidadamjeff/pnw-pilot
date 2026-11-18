@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501, E701, E702  (compact CI marker table)
 """Checks run after merging Dirk's branch into david/3testpnw-se (see workflows/sync-dirk.yaml).
 Pure stdlib: no openpilot build needed. Exit 1 on any failure."""
-import json, math, os, py_compile, subprocess, sys, types
+import json
+import math
+import os
+import py_compile
+import subprocess
+import sys
+import types
 
 fails = []
 def fail(msg): fails.append(msg); print("FAIL:", msg)

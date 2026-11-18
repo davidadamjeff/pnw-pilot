@@ -128,7 +128,7 @@ def add_recent(place):
 
 def set_destination(place, route=None, route_from=None):
   d = clean_place(place)
-  d["ts"] = time.time()
+  d["ts"] = time.time()  # noqa: TID251 -- wall clock on purpose (ETA / destination age)
   if route is not None:
     d["route"] = route                # one Mapbox response, reduced to the chosen route
     d["route_from"] = route_from

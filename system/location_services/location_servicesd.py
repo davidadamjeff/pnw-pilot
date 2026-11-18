@@ -1926,7 +1926,7 @@ class CameraRefresher:
         key = f.read().strip()
       if not re.fullmatch(r"[0-9a-fA-F]{16,64}", key):
         raise ValueError("bad key file")
-      body = (f'<REQUEST><LOGIN authenticationkey="{key}"/>'
+      body = (f'<REQUEST><LOGIN authenticationkey="{key}"/>' +
               '<QUERY objecttype="TrafficSafetyCamera" schemaversion="1"/></REQUEST>').encode()
       req = urllib.request.Request(CAM_API_URL, data=body, headers={"Content-Type": "text/xml",
                                                                    "User-Agent": "pnw-location/1.0"})

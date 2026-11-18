@@ -116,7 +116,7 @@ class Navd:
         self.fetch_result = (dkey, data, "")
       except mapbox.MapboxError as e:
         self.fetch_result = (dkey, None, str(e))
-      except Exception as e:  # noqa: BLE001 -- the daemon must survive anything the network does
+      except Exception as e:  # the daemon must survive anything the network does
         self.fetch_result = (dkey, None, type(e).__name__)
       finally:
         self.fetching = False
@@ -136,7 +136,7 @@ class Navd:
       return
     try:
       self._set_route(Route(data))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
       self.state, self.err = "error", f"bad route ({type(e).__name__})"
 
   def _set_route(self, route):
@@ -152,11 +152,11 @@ class Navd:
   def _try_prechosen(self):
     """Use the route the driver picked on the phone if it is fresh and we are on it."""
     d = self.dest or {}
-    if "route" not in d or self.fix is None or time.time() - float(d.get("ts") or 0) > PRECHOSEN_MAX_AGE_S:
+    if "route" not in d or self.fix is None or time.time() - float(d.get("ts") or 0) > PRECHOSEN_MAX_AGE_S:  # noqa: TID251 -- wall clock on purpose (ETA / destination age)
       return False
     try:
       r = Route(d["route"])
-    except Exception:  # noqa: BLE001
+    except Exception:
       return False
     loc = r.locate(self.fix[0], self.fix[1])
     if loc is None or loc[1] > 60.0 or loc[0] > 500.0:
@@ -166,7 +166,7 @@ class Navd:
 
   # ---- outputs ---------------------------------------------------------------------------------
   def _state_dict(self, now):
-    st = {"ts": now, "wall": time.time(), "state": self.state, "err": self.err,
+    st = {"ts": now, "wall": time.time(), "state": self.state, "err": self.err,  # noqa: TID251 -- wall clock on purpose (ETA / destination age)
           "dest": None if self.dest is None else {k: self.dest.get(k) for k in ("name", "address", "lat", "lon")}}
     t = self.tracker
     if self.route is not None and t is not None and t.s is not None:
@@ -177,7 +177,7 @@ class Navd:
       st.update({
         "valid": self.state == "active" and not t.off_route,
         "s": round(t.s, 1), "perp": round(t.perp, 1),
-        "dist_remaining": round(remaining), "time_remaining": round(trem), "eta": round(time.time() + trem),
+        "dist_remaining": round(remaining), "time_remaining": round(trem), "eta": round(time.time() + trem),  # noqa: TID251 -- wall clock on purpose (ETA / destination age)
         "speed_limit": r.speed_limit_at(t.s),
         "maneuvers": [m.as_dict(d) for m, d in ups],
         "summary": r.summary,
@@ -189,7 +189,7 @@ class Navd:
   def _publish(self, st):
     try:
       self.mem.put_nonblocking("NavStateSE", st)
-    except Exception:  # noqa: BLE001
+    except Exception:
       pass
     if self.frame % INSTR_EVERY == 0:
       msg = messaging.new_message("navInstruction", valid=bool(st.get("valid")))
@@ -223,7 +223,7 @@ class Navd:
     if self.frame % (2 * HZ) == 0:
       try:
         self.enabled = self.params.get_bool("NavigationSE")
-      except Exception:  # noqa: BLE001
+      except Exception:
         self.enabled = True
     self._read_dest()
     if not self.enabled:
@@ -239,7 +239,7 @@ class Navd:
         if now - self.last_pos_save > POS_SAVE_S:
           self.last_pos_save = now
           try:
-            store.write_json(store.POS_FILE, {"lat": fix[0], "lon": fix[1], "t": time.time()})
+            store.write_json(store.POS_FILE, {"lat": fix[0], "lon": fix[1], "t": time.time()})  # noqa: TID251 -- wall clock on purpose (ETA / destination age)
           except OSError:
             pass
     v_ego = self.sm["carState"].vEgo if self.sm.alive["carState"] and self.sm.recv_frame["carState"] > 0 else None
@@ -282,7 +282,7 @@ def main():
   while True:
     try:
       navd.step()
-    except Exception:  # noqa: BLE001 -- keep running; a nav fault must never take anything else down
+    except Exception:  # keep running; a nav fault must never take anything else down
       cloudlog.exception("navse: step failed")
       time.sleep(1.0)
     rk.keep_time()

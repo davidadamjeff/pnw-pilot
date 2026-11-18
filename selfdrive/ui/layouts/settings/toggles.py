@@ -169,29 +169,29 @@ DESCRIPTIONS = {
   ),
   # policebudget-se: own OpenWebNinja key, rationed to the free plan (50 requests/month).
   "PoliceReports": tr_noop(
-    "Show police reports from Waze ahead of you. With your own Waze key it checks only on longer drives "
-    "(after 30 minutes, or after 10 minutes above 80 km/h) and then once an hour, so the free monthly quota "
+    "Show police reports from Waze ahead of you. With your own Waze key it checks only on longer drives " +
+    "(after 30 minutes, or after 10 minutes above 80 km/h) and then once an hour, so the free monthly quota " +
     "lasts. Needs internet in the car (e.g. a phone hotspot). Turn OFF to stop all police lookups."
   ),
   "AccidentReports": tr_noop(
-    "Show Waze accidents ahead. Fetched in the same hourly lookup as police reports (own Waze key), so it "
+    "Show Waze accidents ahead. Fetched in the same hourly lookup as police reports (own Waze key), so it " +
     "costs no extra quota. Display only, never slows the car."
   ),
   "HazardReports": tr_noop(
-    "Show Waze hazards ahead: stopped cars, objects, potholes, roadwork, lane closures and weather. Same "
+    "Show Waze hazards ahead: stopped cars, objects, potholes, roadwork, lane closures and weather. Same " +
     "lookup as police reports, no extra quota. Display only."
   ),
   "NavigationSE": tr_noop(
-    "Turn-by-turn navigation (Mapbox, Swedish voice text, live traffic). Pick the destination on your phone: open "
+    "Turn-by-turn navigation (Mapbox, Swedish voice text, live traffic). Pick the destination on your phone: open " +
     "the address below while the phone is on the same Wi-Fi or is the car's hotspot. The route shows top-left while driving."
   ),
   "NavSpeedControl": tr_noop(
-    "Slow down before turns, roundabouts and U-turns on the active route (about 25 km/h for a turn, 30 for a roundabout). "
+    "Slow down before turns, roundabouts and U-turns on the active route (about 25 km/h for a turn, 30 for a roundabout). " +
     "Reduce-only, needs openpilot speed control and Auto speed reduce not Off. The gas pedal always overrides."
   ),
   "NavTurnDesires": tr_noop(
-    "Tell the driving model about the next route maneuver: turn left/right (below 50 km/h, only when YOUR blinker "
-    "points the same way) and keep left/right at exits and forks (only while you nudge the wheel that way). "
+    "Tell the driving model about the next route maneuver: turn left/right (below 50 km/h, only when YOUR blinker " +
+    "points the same way) and keep left/right at exits and forks (only while you nudge the wheel that way). " +
     "Experimental: the model may ignore or mis-handle the hint. Stay ready to steer."
   ),
   "RoadClosureReports": tr_noop(

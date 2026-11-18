@@ -58,11 +58,11 @@ def main():
           if c["sha"] == prev["sha"]:
             break
           msg = c["commit"]["message"].split("\n")[0][:110]
-          new_lines.append(f"- [`{c['sha'][:8]}`]({c['html_url']}) {c['commit']['author']['date'][:10]} "
+          new_lines.append(f"- [`{c['sha'][:8]}`]({c['html_url']}) {c['commit']['author']['date'][:10]} " +
                            f"`{path}`: {msg}")
       state[key] = {"sha": head["sha"], "date": head["commit"]["committer"]["date"]}
     if new_lines and not first_run:
-      body = (f"Upstream **{w['repo']}** (`{w['branch']}`) changed code behind a feature this fork also has: "
+      body = (f"Upstream **{w['repo']}** (`{w['branch']}`) changed code behind a feature this fork also has: " +
               f"**{w['feature']}**.\n\nNew upstream commits:\n" + "\n".join(new_lines) +
               "\n\nOur implementation to compare: " + ", ".join(f"`{p}`" for p in w["ours"]) +
               "\n\n_Opened by watch-upstreams.yaml. Close it once reviewed (port, ignore, or note why)._")
@@ -80,7 +80,7 @@ def main():
     open(REPORT, "w").write(head.rstrip("\n") + "\n\n" + "\n".join(fallback) + ("\n## " + rest if rest else ""))
     open("/tmp/upstream_alert", "w").write(str(len(fallback)))
   json.dump(state, open(STATE, "w"), indent=1, sort_keys=True)
-  print(f"{datetime.now(UTC):%Y-%m-%d %H:%M} watched={sum(len(w['paths']) for w in cfg['watches'])} "
+  print(f"{datetime.now(UTC):%Y-%m-%d %H:%M} watched={sum(len(w['paths']) for w in cfg['watches'])} " +
         f"issues={len(issues)} first_run={first_run} errors={len(errors)}")
   for e in errors:
     print("WARN", e)

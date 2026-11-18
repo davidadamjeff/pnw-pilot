@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501  (the embedded HTML/JS page)
 """navse: phone page for choosing a destination. http://<hostname>.local/<key>  (port 80 is redirected to 8088
 by launch_chffrplus.sh; http://<ip>:8088/?k=<key> always works too)
 
@@ -29,7 +30,7 @@ def _mem_get(key):
     if isinstance(v, (bytes, str)):
       v = json.loads(v)
     return v
-  except Exception:  # noqa: BLE001
+  except Exception:
     return None
 
 
@@ -56,7 +57,7 @@ def _route_choices(dest):
   data = mapbox.directions(key, pos[:2], dest, bearing=pos[2] if pos[3] else None, alternatives=True)
   cid = uuid.uuid4().hex[:12]
   with _lock:
-    now = time.time()
+    now = time.time()  # noqa: TID251 -- wall clock on purpose (ETA / destination age)
     for k in [k for k, v in _choices.items() if now - v[0] > CHOICES_TTL_S]:
       _choices.pop(k, None)
     _choices[cid] = (now, pos[:2], data)
@@ -116,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
       self.end_headers()
       return
     if not ok:
-      return self._send(403, "<meta name=viewport content='width=device-width'><h2>Skriv adressen med nyckeln, "
+      return self._send(403, "<meta name=viewport content='width=device-width'><h2>Skriv adressen med nyckeln, " +
                         "t.ex. http://namn.local/nyckel (se comma: Settings → Toggles → Navigation)</h2>", "text/html")
     if url.path == "/":
       return self._send(200, PAGE, "text/html", cookie=set_cookie)

@@ -1,5 +1,7 @@
 # PNW Pilot — openpilot for the Pacific Northwest
 
+> 🇸🇪 **This is the Sweden branch (`david/3testpnw-se`).** What it adds on top of Dirk's `3testpnw`: see [SWEDEN.md](SWEDEN.md).
+
 **PNW Pilot** is a personal production distribution of [openpilot](https://github.com/commaai/openpilot),
 built on the [xnor-tech](https://github.com/xnor-tech) fork for its legacy Tesla (Raven) support and
 tuned for one job: driving the PNW, especially the **I-5 corridor between Seattle, WA and
