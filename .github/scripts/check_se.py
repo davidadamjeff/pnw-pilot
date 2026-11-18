@@ -31,6 +31,8 @@ MARKERS = {
   "system/loggerd/uploader.py": ["def _comma_backend", "if self._comma:"],
   "system/ui/widgets/network.py": ['tr("comma")'],
   "selfdrive/ui/widgets/prime.py": ["commabackend-se"],
+  "common/params_keys.h": ['"PoliceReports"'],
+  "selfdrive/ui/layouts/settings/toggles.py": ['"PoliceReports": ('],
   ".gitmodules": ["https://github.com/dirkpetersen/pnw-panda.git", "https://github.com/dirkpetersen/pnw-opendbc.git"],
 }
 for f, needles in MARKERS.items():

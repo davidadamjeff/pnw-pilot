@@ -14,7 +14,7 @@ import os
 import time
 
 DEFAULTS = {
-  "monthly_cap": 45,
+  "monthly_cap": 50,       # the free plan's hard limit; counted before sending, never exceeded
   "activate_after_drive_s": 1800,
   "activate_speed_kmh": 80.0,
   "activate_speed_hold_s": 600,

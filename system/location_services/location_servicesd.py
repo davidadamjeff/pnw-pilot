@@ -632,6 +632,10 @@ class PoliceUpdater(threading.Thread):
         try:
           # toggles-invert2pnw: DisableLocationServices is opt-out (ON == disabled); enabled by default.
           enabled = not self._params.get_bool("DisableLocationServices")   # PERSISTENT store (was wrongly read
+          try:                                                              # policebudget-se: own on/off toggle
+            enabled = enabled and self._params.get_bool("PoliceReports")
+          except Exception:
+            pass                                                            # unregistered key (old build) -> stay on
                                                                             # from mem -> always False -> never polled)
         except Exception:
           pass

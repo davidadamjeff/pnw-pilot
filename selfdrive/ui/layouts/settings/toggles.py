@@ -166,6 +166,12 @@ DESCRIPTIONS = {
     "police report (Waze), rest area, and EV fast charger ahead. Display-only — never affects " +
     "steering or speed. Turn this ON to hide it."
   ),
+  # policebudget-se: own OpenWebNinja key, rationed to the free plan (50 requests/month).
+  "PoliceReports": tr_noop(
+    "Show police reports from Waze ahead of you. With your own Waze key it checks only on longer drives "
+    "(after 30 minutes, or after 10 minutes above 80 km/h) and then once an hour, so the free monthly quota "
+    "lasts. Needs internet in the car (e.g. a phone hotspot). Turn OFF to stop all police lookups."
+  ),
   "EvIncludeLevel2": tr_noop(
     "Also show slow Level 2 (AC) chargers in the EV line, not just DC-fast. Off by default."
   ),
@@ -326,6 +332,12 @@ class TogglesLayout(Widget):
       "DisableLocationServices": (
         lambda: tr("Disable Location Services"),
         DESCRIPTIONS["DisableLocationServices"],
+        "speed_limit.png",
+        False,
+      ),
+      "PoliceReports": (
+        lambda: tr("Police Reports (Waze)"),
+        DESCRIPTIONS["PoliceReports"],
         "speed_limit.png",
         False,
       ),

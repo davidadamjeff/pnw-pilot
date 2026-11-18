@@ -278,6 +278,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // DisableLaneCentering). manager_init() migrates an existing device's LocationServicesEnabled
     // value into this key once (see TogglesInvertedMigrated) so upgrading never flips anyone's live behavior.
     {"DisableLocationServices", {PERSISTENT, BOOL, "0"}},
+    {"PoliceReports", {PERSISTENT, BOOL, "1"}},  // policebudget-se: Waze police reports on/off (own key or proxy). Default ON.
     // toggles-invert2pnw: one-shot guard for manager_init()'s opt-out-toggle migration (NudgelessLaneChange
     // -> NudgeForLaneChange, FordAngleLateral -> NoFordAngleSteering, LocationServicesEnabled ->
     // DisableLocationServices, ShowSpeedLimit -> NoSpeedLimitDisplay). Set True the first time the
