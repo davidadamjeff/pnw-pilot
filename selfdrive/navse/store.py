@@ -65,7 +65,7 @@ def web_token():
   try:
     with open(path(TOKEN_FILE)) as f:
       t = f.read().strip()
-      if len(t) >= 8:
+      if len(t) >= 4:            # the owner may choose a short one (he did: home Wi-Fi / own hotspot only)
         return t
   except OSError:
     pass

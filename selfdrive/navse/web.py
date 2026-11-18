@@ -39,6 +39,9 @@ def _position():
   p = store.read_json(store.POS_FILE)
   if isinstance(p, dict) and "lat" in p:
     return float(p["lat"]), float(p["lon"]), None, False
+  home = next((f for f in store.places()["favorites"] if f.get("slot") == "home"), None)
+  if home is not None:                       # never driven yet: plan from the saved Home
+    return float(home["lat"]), float(home["lon"]), None, False
   return None
 
 
@@ -162,16 +165,31 @@ PAGE = r"""<!doctype html><html lang="sv"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#111">
 <title>comma nav</title><style>
-:root{--bg:#111;--card:#1d1f22;--fg:#eee;--dim:#9aa;--acc:#3ba55d;--warn:#e0a030;--bad:#e05050}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px -apple-system,system-ui,sans-serif;padding:12px 14px 40px}
+:root{--bg:#111;--card:#1d1f22;--fg:#eee;--dim:#9aa;--acc:#3ba55d;--warn:#e0a030;--bad:#e05050;--sel:#24402e}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px -apple-system,system-ui,sans-serif;padding:12px 14px 90px}
 h1{font-size:20px;margin:4px 0 12px}h2{font-size:14px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 6px}
-.card{background:var(--card);border-radius:12px;padding:12px;margin:8px 0}
+.card{background:var(--card);border-radius:12px;padding:12px;margin:8px 0;transition:box-shadow .3s,background .3s}
+.card.flash{animation:flash 1.6s ease-out}@keyframes flash{0%{box-shadow:0 0 0 3px var(--acc);background:#20352a}100%{box-shadow:0 0 0 0 transparent}}
 input{width:100%;font-size:18px;padding:12px;border-radius:10px;border:1px solid #333;background:#000;color:var(--fg)}
-button{font-size:16px;padding:10px 14px;border-radius:10px;border:0;background:#2c3035;color:var(--fg);margin:4px 6px 0 0}
+input:focus{outline:2px solid var(--acc)}
+button{font-size:16px;padding:10px 14px;border-radius:10px;border:0;background:#2c3035;color:var(--fg);margin:4px 6px 0 0;
+ transition:transform .08s,filter .15s,opacity .2s}
+button:active{transform:scale(.94);filter:brightness(1.35)}button[disabled]{opacity:.65}
 button.go{background:var(--acc);color:#000;font-weight:600}button.bad{background:var(--bad);color:#000}
+button.done{background:#1f5f35;color:#fff}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px}.sub{color:var(--dim);font-size:14px}
-.item{padding:10px 4px;border-bottom:1px solid #2a2a2a}.item:last-child{border:0}.big{font-size:22px;font-weight:600}
-.err{color:var(--bad)}.ok{color:var(--acc)}
+.item{padding:10px 8px;border-bottom:1px solid #2a2a2a;border-radius:8px;cursor:pointer;transition:background .15s}
+.item:last-child{border-bottom:0}.item:active{background:#2a2f33}
+.item.sel{background:var(--sel);box-shadow:inset 3px 0 0 var(--acc)}
+.big{font-size:22px;font-weight:600}.err{color:var(--bad)}.ok{color:var(--acc)}
+.spin{display:inline-block;width:15px;height:15px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;
+ animation:r .7s linear infinite;vertical-align:-2px;margin-right:7px}@keyframes r{to{transform:rotate(360deg)}}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;background:var(--dim)}
+.dot.on{background:var(--acc);animation:pulse 1.4s infinite}@keyframes pulse{50%{opacity:.35}}
+#toast{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));padding:14px 16px;border-radius:12px;
+ font-size:17px;font-weight:600;background:var(--acc);color:#000;box-shadow:0 6px 24px #000a;transform:translateY(160%);
+ transition:transform .25s ease-out;z-index:9}#toast.show{transform:none}#toast.bad{background:var(--bad)}#toast.info{background:#3a4a5a;color:#fff}
 </style></head><body>
 <h1>🧭 Navigering</h1>
 <div id="status" class="card">…</div>
@@ -179,48 +197,78 @@ button.go{background:var(--acc);color:#000;font-weight:600}button.bad{background
 <div id="results"></div><div id="choice"></div>
 <h2>Favoriter</h2><div id="favs" class="card"></div>
 <h2>Senaste</h2><div id="recents" class="card"></div>
+<div id="toast"></div>
 <script>
-const $=s=>document.querySelector(s);let picked=null,places={favorites:[],recents:[]},C=[];const reg=o=>(C.push(o),C.length-1);
+const $=s=>document.querySelector(s);let picked=null,places={favorites:[],recents:[]},C=[],lastState=null;
+const reg=o=>(C.push(o),C.length-1);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const SPIN='<span class="spin"></span>';
 async function api(p,b){const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});
  const j=await r.json().catch(()=>({error:"HTTP "+r.status}));if(!r.ok)throw new Error(j.error||r.status);return j}
+let tt=null;function toast(msg,kind){const t=$("#toast");t.className=kind||"";t.textContent=msg;
+ requestAnimationFrame(()=>t.classList.add("show"));clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2600);
+ if(navigator.vibrate)navigator.vibrate(kind==="bad"?[60,40,60]:30)}
+function busy(btn,text){if(!btn)return()=>{};const old=btn.innerHTML;btn.disabled=true;btn.innerHTML=SPIN+text;
+ return(ok,doneText)=>{if(ok&&doneText){btn.classList.add("done");btn.innerHTML="✓ "+doneText}else{btn.disabled=false;btn.innerHTML=old}}}
+function mark(el){if(!el)return;document.querySelectorAll(".item.sel").forEach(x=>x.classList.remove("sel"));el.classList.add("sel")}
+function flash(sel){const e=$(sel);e.classList.remove("flash");void e.offsetWidth;e.classList.add("flash")}
 function fmtDist(m){return m>=1000?(m/1000).toFixed(m>=10000?0:1)+" km":Math.round(m/10)*10+" m"}
 function fmtTime(s){s=Math.round(s/60);return s>=60?Math.floor(s/60)+" h "+(s%60)+" min":s+" min"}
+const ST={active:"Navigerar",routing:"Hämtar rutt…",rerouting:"Räknar om…",waiting_gps:"Väntar på GPS (starta bilen)",
+ arrived:"Framme!",error:"Fel",off:"Avstängd",idle:""};
 async function refresh(){try{const j=await api("/api/state");places=j.places;drawPlaces();
  const n=j.nav||{},d=j.dest;let h="";
  if(!j.has_key)h+='<div class="err">Ingen Mapbox-nyckel på enheten.</div>';
  if(!j.enabled)h+='<div class="err">Navigation är avstängd i Settings → Toggles.</div>';
- if(!d){h+='<div class="sub">Ingen destination.</div>'}else{
+ if(!d){h+='<div class="sub">Ingen destination. Sök nedan eller välj en favorit.</div>'}else{
+  const live=n.state==="active",work=["routing","rerouting","waiting_gps"].includes(n.state);
   h+=`<div class="big">${esc(d.name||d.address)}</div><div class="sub">${esc(d.address||"")}</div>`;
-  const st={active:"Navigerar",routing:"Hämtar rutt…",rerouting:"Räknar om…",waiting_gps:"Väntar på GPS (starta bilen)",arrived:"Framme!",error:"Fel",off:"Avstängd",idle:""}[n.state]||n.state||"";
-  h+=`<div class="${n.state==="error"?"err":"ok"}">${esc(st)} ${esc(n.err||"")}</div>`;
+  h+=`<div class="${n.state==="error"?"err":"ok"}" style="margin-top:6px">${work?SPIN:`<span class="dot ${live?"on":""}"></span>`}${esc(ST[n.state]??n.state??"")} ${esc(n.err||"")}</div>`;
   if(n.dist_remaining!=null)h+=`<div>${fmtDist(n.dist_remaining)} · ${fmtTime(n.time_remaining)} · framme ${new Date(n.eta*1000).toLocaleTimeString("sv",{hour:"2-digit",minute:"2-digit"})}</div>`;
   const m=(n.maneuvers||[])[0];if(m)h+=`<div class="sub">Nästa: ${esc(m.instruction||m.text)} om ${fmtDist(m.dist_m)}</div>`;
-  h+='<button class="bad" onclick="cancelNav()">Avbryt</button>'}
- $("#status").innerHTML=h}catch(e){$("#status").innerHTML='<span class="err">'+esc(e.message)+'</span>'}}
-function placeRow(p,i,kind){const lbl=p.slot==="home"?"🏠 Hem":p.slot==="work"?"💼 Jobb":esc(p.name||p.address);
- return `<div class="item row"><div onclick="choose(C[${reg(p)}])" style="flex:1"><div>${lbl}</div><div class="sub">${esc(p.address)}</div></div>`+
- (kind==="fav"?`<button onclick="delFav(${i})">✕</button>`:"")+`</div>`}
-function drawPlaces(){$("#favs").innerHTML=places.favorites.map((p,i)=>placeRow(p,i,"fav")).join("")||'<div class="sub">Välj en plats och tryck ★ för att spara.</div>';
- $("#recents").innerHTML=places.recents.map((p,i)=>placeRow(p,i,"rec")).join("")||'<div class="sub">–</div>'}
-let t=null;$("#q").addEventListener("input",e=>{clearTimeout(t);t=setTimeout(()=>search(e.target.value),350)});
-async function search(q){if(q.trim().length<2){$("#results").innerHTML="";return}
- try{const j=await api("/api/search?q="+encodeURIComponent(q));
-  $("#results").innerHTML='<div class="card">'+(j.results.map(r=>`<div class="item" onclick="choose(C[${reg(r)}])"><div>${esc(r.name)}</div><div class="sub">${esc(r.address)}</div></div>`).join("")||'<div class="sub">Inga träffar</div>')+'</div>'}
- catch(e){$("#results").innerHTML='<div class="err">'+esc(e.message)+'</div>'}}
-async function choose(p){picked=p;$("#results").innerHTML="";$("#choice").innerHTML='<div class="card">Hämtar rutter…</div>';
- let h=`<div class="card"><div class="big">${esc(p.name||p.address)}</div><div class="sub">${esc(p.address||"")}</div>`;
- try{const j=await api("/api/routes",{lat:p.lat,lon:p.lon});
-  j.routes.forEach(r=>{const late=r.min-r.typical_min;h+=`<div class="item row"><div><b>${fmtTime(r.min*60)}</b> · ${r.km} km`+
-   (late>=3?` <span style="color:var(--warn)">+${late} min kö</span>`:"")+`<div class="sub">via ${esc(r.via)}</div></div><button class="go" onclick="go(C[${reg(p)}],'${esc(j.id)}',${Number(r.idx)})">Kör</button></div>`});
-  if(!j.live_gps)h+='<div class="sub">Startpunkt = senaste kända position.</div>'}
- catch(e){h+=`<div class="err">${esc(e.message)}</div><button class="go" onclick="go(C[${reg(p)}],null,null)">Kör ändå</button>`}
- h+=`<div><button onclick="fav('home')">🏠 Spara som Hem</button><button onclick="fav('work')">💼 Jobb</button><button onclick="fav('fav')">★ Favorit</button></div></div>`;
+  h+='<button class="bad" onclick="cancelNav(this)">Avbryt</button>'}
+ if(n.state!==lastState){if(lastState&&n.state==="active")toast("🧭 Rutten är klar");if(n.state==="arrived")toast("🏁 Framme!");lastState=n.state}
+ $("#status").innerHTML=h}catch(e){$("#status").innerHTML='<span class="err">Ingen kontakt med comma: '+esc(e.message)+'</span>'}}
+function placeRow(p,i,kind){const lbl=p.slot==="home"?"🏠 Hem":p.slot==="work"?"💼 Jobb":"★ "+esc(p.name||p.address);
+ return `<div class="item row"><div onclick="choose(C[${reg(p)}],this.parentNode)" style="flex:1"><div>${kind==="fav"?lbl:esc(p.name||p.address)}</div><div class="sub">${esc(p.address)}</div></div>`+
+ (kind==="fav"?`<button onclick="delFav(${i},this)" aria-label="Ta bort">✕</button>`:"")+`</div>`}
+function drawPlaces(){const f=places.favorites.map((p,i)=>placeRow(p,i,"fav")).join("")||'<div class="sub">Välj en plats och tryck ★ för att spara.</div>';
+ const r=places.recents.map((p,i)=>placeRow(p,i,"rec")).join("")||'<div class="sub">–</div>';
+ if($("#favs").dataset.h!==f){$("#favs").innerHTML=f;$("#favs").dataset.h=f}
+ if($("#recents").dataset.h!==r){$("#recents").innerHTML=r;$("#recents").dataset.h=r}}
+let t=null,seq=0;$("#q").addEventListener("input",e=>{clearTimeout(t);const q=e.target.value;
+ if(q.trim().length>=2)$("#results").innerHTML='<div class="card sub">'+SPIN+'Söker…</div>';t=setTimeout(()=>search(q),350)});
+$("#q").addEventListener("keydown",e=>{if(e.key==="Enter"){clearTimeout(t);search(e.target.value);e.target.blur()}});
+async function search(q){const my=++seq;if(q.trim().length<2){$("#results").innerHTML="";return}
+ try{const j=await api("/api/search?q="+encodeURIComponent(q));if(my!==seq)return;
+  $("#results").innerHTML='<div class="card">'+(j.results.map(r=>`<div class="item" onclick="choose(C[${reg(r)}],this)"><div>${esc(r.name)}</div><div class="sub">${esc(r.address)}</div></div>`).join("")||'<div class="sub">Inga träffar</div>')+'</div>'}
+ catch(e){$("#results").innerHTML='<div class="card err">Sökningen misslyckades: '+esc(e.message)+'</div>'}}
+async function choose(p,el){picked=p;mark(el);
+ let h=`<div class="card" id="ch"><div class="big">${esc(p.name||p.address)}</div><div class="sub">${esc(p.address||"")}</div>`;
+ $("#choice").innerHTML=h+`<div class="sub" style="margin-top:8px">${SPIN}Hämtar rutter med trafik…</div></div>`;
+ $("#ch").scrollIntoView({behavior:"smooth",block:"start"});
+ try{const j=await api("/api/routes",{lat:p.lat,lon:p.lon});if(picked!==p)return;
+  h+='<div class="sub" style="margin-top:8px">Välj rutt:</div>';
+  j.routes.forEach((r,k)=>{const late=r.min-r.typical_min;h+=`<div class="item row"><div><b>${fmtTime(r.min*60)}</b> · ${r.km} km`+
+   (k===0?' <span class="ok">snabbast</span>':"")+(late>=3?` <span style="color:var(--warn)">+${late} min kö</span>`:"")+
+   `<div class="sub">via ${esc(r.via)}</div></div><button class="go" onclick="go(C[${reg(p)}],'${esc(j.id)}',${Number(r.idx)},this)">Kör</button></div>`});
+  if(!j.live_gps)h+='<div class="sub">Startpunkt = senaste kända position eller Hem (bilen är avstängd).</div>'}
+ catch(e){if(picked!==p)return;h+=`<div class="err" style="margin-top:8px">Kunde inte hämta rutter: ${esc(e.message)}</div><button class="go" onclick="go(C[${reg(p)}],null,null,this)">Kör ändå</button>`}
+ h+=`<div style="margin-top:6px"><button onclick="fav('home',this)">🏠 Spara som Hem</button><button onclick="fav('work',this)">💼 Jobb</button><button onclick="fav('fav',this)">★ Favorit</button><button onclick="closeChoice()">Stäng</button></div></div>`;
  $("#choice").innerHTML=h}
-async function go(p,cid,idx){await api("/api/go",{...p,choice:cid,idx});$("#choice").innerHTML="";$("#q").value="";refresh()}
-async function cancelNav(){await api("/api/cancel",{});refresh()}
-async function fav(slot){const j=await api("/api/fav",{...picked,slot});places=j.places;drawPlaces()}
-async function delFav(i){const j=await api("/api/fav/delete",{index:i});places=j.places;drawPlaces()}
+function closeChoice(){picked=null;$("#choice").innerHTML="";document.querySelectorAll(".item.sel").forEach(x=>x.classList.remove("sel"))}
+async function go(p,cid,idx,btn){const done=busy(btn,"Startar…");
+ try{await api("/api/go",{...p,choice:cid,idx});done(true,"Startad");toast("✅ Navigering startad: "+(p.name||p.address));
+  setTimeout(()=>{closeChoice();$("#results").innerHTML="";$("#q").value="";window.scrollTo({top:0,behavior:"smooth"});flash("#status")},700);refresh()}
+ catch(e){done(false);toast("Kunde inte starta: "+e.message,"bad")}}
+async function cancelNav(btn){if(!confirm("Avbryta navigeringen?"))return;const done=busy(btn,"Avbryter…");
+ try{await api("/api/cancel",{});toast("Navigering avbruten","info");refresh()}catch(e){done(false);toast(e.message,"bad")}}
+async function fav(slot,btn){const done=busy(btn,"Sparar…");
+ try{const j=await api("/api/fav",{...picked,slot});places=j.places;drawPlaces();
+  done(true,{home:"Hem sparat",work:"Jobb sparat",fav:"Sparad"}[slot]);toast({home:"🏠 Sparad som Hem",work:"💼 Sparad som Jobb",fav:"★ Sparad som favorit"}[slot]);flash("#favs")}
+ catch(e){done(false);toast(e.message,"bad")}}
+async function delFav(i,btn){if(!confirm("Ta bort favoriten?"))return;const done=busy(btn,"");
+ try{const j=await api("/api/fav/delete",{index:i});places=j.places;drawPlaces();toast("Favorit borttagen","info")}catch(e){done(false);toast(e.message,"bad")}}
 refresh();setInterval(refresh,3000);
 </script></body></html>"""
 
