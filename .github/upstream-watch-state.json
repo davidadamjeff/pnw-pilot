@@ -1,0 +1,58 @@
+{
+ "StarPilotHQ/StarPilot@stable:selfdrive/controls/lib/desire_helper.py": {
+  "date": "2026-09-28T18:51:49Z",
+  "sha": "96ef704da7fce3fc184c0f11f6c4072eb93029c0"
+ },
+ "StarPilotHQ/StarPilot@stable:starpilot/controls/lib": {
+  "date": "2026-10-09T03:55:06Z",
+  "sha": "956aceaf0ab96afcd737ffdc0758ace7eb9dad48"
+ },
+ "StarPilotHQ/StarPilot@stable:starpilot/navigation": {
+  "date": "2026-09-28T18:51:49Z",
+  "sha": "96ef704da7fce3fc184c0f11f6c4072eb93029c0"
+ },
+ "StarPilotHQ/StarPilot@stable:starpilot/system/the_galaxy/assets/components/navigation": {
+  "date": "2026-09-14T19:11:41Z",
+  "sha": "2878d13c3d627e8634d3ab2431037e82ee2914c8"
+ },
+ "commaai/openpilot@master:openpilot/selfdrive/navigation": {
+  "date": "2026-10-12T00:49:50Z",
+  "sha": "4c362ca3272c7418a068d43c402c84bd0544f35a"
+ },
+ "dirkpetersen/pnw-pilot@3pnw:system/location_services": {
+  "date": "2026-07-13T01:16:44Z",
+  "sha": "e65b671d893dbfebccadd0fedc93e839ebe31bd2"
+ },
+ "sunnypilot/sunnypilot@master:openpilot/selfdrive/navigation": {
+  "date": "2026-10-12T00:49:50Z",
+  "sha": "4c362ca3272c7418a068d43c402c84bd0544f35a"
+ },
+ "sunnypilot/sunnypilot@master:openpilot/sunnypilot/navd": {
+  "date": "2026-08-14T19:35:10Z",
+  "sha": "7461f70fdb6471eb84561393f1a28e39f0c3f00d"
+ },
+ "xnor-tech/opendbc@master-xnor:opendbc/car/tesla": {
+  "date": "2026-08-14T14:41:41Z",
+  "sha": "3f86206a13c3181f0224e8f1424b836592e2b2d2"
+ },
+ "xnor-tech/opendbc@master-xnor:opendbc/safety/modes": {
+  "date": "2026-08-14T14:41:41Z",
+  "sha": "3f86206a13c3181f0224e8f1424b836592e2b2d2"
+ },
+ "xnor-tech/openpilot@xnor-dev:opendbc_repo": {
+  "date": "2026-08-14T14:50:43Z",
+  "sha": "4f3da998b1678f7d452d5c2e213cb6a73dc34fae"
+ },
+ "xnor-tech/openpilot@xnor-dev:openpilot/common/hardware/comma/agnos.py": {
+  "date": "2026-08-08T01:49:27Z",
+  "sha": "cbda3f7994322ed40b428ea49c5bd868ff018700"
+ },
+ "xnor-tech/openpilot@xnor-dev:openpilot/selfdrive/pandad": {
+  "date": "2026-08-14T19:53:01Z",
+  "sha": "b0ff294feb3e39f252deedca0e45b84ceb6545f6"
+ },
+ "xnor-tech/openpilot@xnor-dev:panda": {
+  "date": "2026-08-15T09:53:25Z",
+  "sha": "44be035782288ed94d1a15116907cc08c0a7c83d"
+ }
+}

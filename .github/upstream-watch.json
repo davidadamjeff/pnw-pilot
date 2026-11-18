@@ -1,0 +1,23 @@
+{
+  "_doc": "watch-upstreams.yaml: daily, each entry's paths are checked for new commits; a change opens one issue here. Dirk's 3testpnw is merged by sync-dirk.yaml instead.",
+  "watches": [
+    {"feature": "Navigation: route engine (navse)", "repo": "StarPilotHQ/StarPilot", "branch": "stable",
+     "paths": ["starpilot/navigation"], "ours": ["selfdrive/navse/route.py", "selfdrive/navse/navd.py"]},
+    {"feature": "Navigation: turn/keep hints to the model", "repo": "StarPilotHQ/StarPilot", "branch": "stable",
+     "paths": ["selfdrive/controls/lib/desire_helper.py"], "ours": ["selfdrive/controls/lib/desire_helper.py"]},
+    {"feature": "Navigation: route speed control + Galaxy nav page", "repo": "StarPilotHQ/StarPilot", "branch": "stable",
+     "paths": ["starpilot/controls/lib", "starpilot/system/the_galaxy/assets/components/navigation"],
+     "ours": ["selfdrive/controls/lib/speedadjust_pnw/speedadjust_controller.py", "selfdrive/navse/web.py"]},
+    {"feature": "Navigation: comma upstream nav (navd/mapsd)", "repo": "commaai/openpilot", "branch": "master",
+     "paths": ["openpilot/selfdrive/navigation"], "ours": ["selfdrive/navse"]},
+    {"feature": "Navigation: sunnypilot nav", "repo": "sunnypilot/sunnypilot", "branch": "master",
+     "paths": ["openpilot/selfdrive/navigation", "openpilot/sunnypilot/navd"], "ours": ["selfdrive/navse"]},
+    {"feature": "Tesla HW2 (legacy) car port", "repo": "xnor-tech/opendbc", "branch": "master-xnor",
+     "paths": ["opendbc/car/tesla", "opendbc/safety/modes"], "ours": ["opendbc_repo/opendbc/car/tesla"]},
+    {"feature": "xnor-dev: second panda / pandad / AGNOS updater", "repo": "xnor-tech/openpilot", "branch": "xnor-dev",
+     "paths": ["openpilot/selfdrive/pandad", "openpilot/common/hardware/comma/agnos.py", "panda", "opendbc_repo"],
+     "ours": ["selfdrive/pandad", "system/hardware/tici/agnos.py"]},
+    {"feature": "Waze police feed (location services)", "repo": "dirkpetersen/pnw-pilot", "branch": "3pnw",
+     "paths": ["system/location_services"], "ours": ["system/location_services"]}
+  ]
+}

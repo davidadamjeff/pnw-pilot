@@ -141,6 +141,11 @@ MILE_M = 1609.344
 # posted limit (no margin) once a camera on our road/direction is ~CAM_ENGAGE_S ahead, hold until it is passed
 # (location_servicesd drops it), then release. No posted limit -> no cap. A manual set change dismisses it.
 CAM_ENGAGE_S = 20.0
+# navse: route speed control -- slow for the active route's turns / roundabouts / U-turns (NavStateSE mem param).
+NAV_A_PLAN = 1.0       # m/s^2: matches CAP_SLEW, the rate the emitted cap ramps down
+NAV_LEAD_S = 3.0       # s of extra margin (1 Hz read + slew start)
+NAV_STALE_S = 3.0      # ignore a NavStateSE older than this
+NAV_LOOK_M = 1500.0    # only maneuvers this close are considered
 
 # police
 POLICE_MARGIN = 5.0 * MPH_TO_MS          # target = posted limit + 5 mph
@@ -303,6 +308,9 @@ class SpeedAdjustController:
     self._long_ok = bool(getattr(CP, "openpilotLongitudinalControl", False))
     self._mode = 0
     self._camera = None              # speedcam-se: LocationServices camera line
+    self._nav = None                 # navse: NavStateSE (None = off / no valid route)
+    self._nav_latched = {}           # navse: maneuver idx -> latched while approaching it
+    self._nav_suppressed = set()     # navse: maneuver idxs the driver dismissed with a manual set change
     self._cam_active_id = None       # camera currently capping
     self._cam_suppressed_id = None   # camera the driver dismissed with a manual set change
     self._mode_err_t = None      # silentexc2pnw: monotonic time of the last logged AutoSpeedReduce read failure (None = never)
@@ -527,6 +535,51 @@ class SpeedAdjustController:
     except Exception:
       return None
 
+  def _read_nav(self):
+    """navse: the route state, only when NavSpeedControl is on and navd says the route is valid."""
+    try:
+      if not self.params.get_bool("NavSpeedControl") or self.mem_params is None:
+        return None
+      st = self.mem_params.get("NavStateSE", return_default=True)
+      return st if isinstance(st, dict) and st.get("valid") else None
+    except Exception:
+      return None
+
+  def _nav_cap(self, v_ego: float):
+    """navse: lowest comfortable speed among the route maneuvers we must start slowing for now. A maneuver
+    latches once inside its braking distance and stays until navd drops it (passed)."""
+    st = self._nav
+    if st is None:
+      self._nav_latched = {}
+      self._nav_suppressed = set()
+      return None
+    try:
+      age = time.monotonic() - float(st.get("ts") or 0.0)
+    except (TypeError, ValueError):
+      return None
+    if age < 0.0 or age > NAV_STALE_S:
+      return None
+    out, keep = None, {}
+    for m in st.get("maneuvers") or []:
+      try:
+        tgt, idx = m.get("target_ms"), m.get("idx")
+        if tgt is None or idx is None:
+          continue
+        tgt = max(float(tgt), MIN_CAP)
+        d = float(m["dist_m"]) - v_ego * age
+      except (KeyError, TypeError, ValueError):
+        continue
+      if d > NAV_LOOK_M:
+        break
+      if idx in self._nav_suppressed:
+        continue
+      need = max(0.0, (v_ego ** 2 - tgt ** 2) / (2.0 * NAV_A_PLAN)) + v_ego * NAV_LEAD_S
+      if idx in self._nav_latched or (d <= need and v_ego > tgt + 0.5):
+        keep[idx] = True
+        out = tgt if out is None else min(out, tgt)
+    self._nav_latched = keep
+    return out
+
   def _camera_cap(self, v_ego: float):
     """speedcam-se: target = posted limit when a camera is within CAM_ENGAGE_S of driving, else None."""
     c = self._camera
@@ -571,6 +624,7 @@ class SpeedAdjustController:
     self._sl = self._read_speed_limit()
     self._police = self._read_police()
     self._camera = self._read_camera()  # speedcam-se
+    self._nav = self._read_nav()  # navse
     self._la_mode = self._read_la_mode()
     self._next_raw = self._read_next_limit()
     self._update_announcement()
@@ -1384,6 +1438,9 @@ class SpeedAdjustController:
         # suppressed a pending, not-yet-latched police alert whenever the driver overrode an active
         # limit trim. The limit-drop cap itself still releases unconditionally below (_sl_ref/_ratio
         # re-anchor + _cap_out=None are OUTSIDE this gate).
+        if self._nav_latched:                 # navse: the driver dismissed this route-turn slowdown
+          self._nav_suppressed |= set(self._nav_latched)
+          self._nav_latched = {}
         if self._cam_active_id is not None:   # speedcam-se: the driver dismissed this camera's slowdown
           self._cam_suppressed_id = self._cam_active_id
           self._cam_active_id = None
@@ -1477,6 +1534,9 @@ class SpeedAdjustController:
     cc = self._camera_cap(v_ego)                 # speedcam-se: modes 1 and 2
     if cc is not None:
       caps.append(cc)
+    nc = self._nav_cap(v_ego)                    # navse: route turns, modes 1 and 2
+    if nc is not None:
+      caps.append(nc)
     # speedanchor2pnw (F3): re-anchor the limit-drop baseline whenever the feature is active (mode 1 or
     # 2) — not just when the drop-cap itself is computed (mode 2 only) — so it never goes stale across
     # an AutoSpeedReduce 1→2 switch.

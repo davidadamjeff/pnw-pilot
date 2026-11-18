@@ -45,6 +45,27 @@ MAP_CLASS_TTL_S = 5.0
 # release tail (<= 60 ms, so <= 2 ticks) after a manual nudge.
 LANE_CHANGE_ABORT_TICKS = round(0.3 / DT_MDL)
 
+# navse: route maneuver hints (NavStateSE mem param). Always DRIVER-CONFIRMED, mirroring StarPilot:
+# a turn hint needs the driver's own blinker on that side; a keep hint at an exit/fork needs his nudge.
+NAV_TURN_MAX_SPEED = 14.0          # m/s (~50 km/h)
+NAV_TURN_PREVIEW_S = 6.0
+NAV_TURN_MIN_M = 35.0
+NAV_TURN_MAX_M = 90.0
+NAV_KEEP_SPEEDS = (0.0, 15.0, 30.0)
+NAV_KEEP_DISTS = (25.0, 90.0, 160.0)
+NAV_STALE_S = 2.5
+NAV_TURN_TYPES = ("turn", "end of road")
+NAV_KEEP_TYPES = ("off ramp", "fork")
+
+
+def _interp(x, xs, ys):
+  if x <= xs[0]:
+    return ys[0]
+  for i in range(1, len(xs)):
+    if x <= xs[i]:
+      return ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1])
+  return ys[-1]
+
 DESIRES = {
   LaneChangeDirection.none: {
     LaneChangeState.off: log.Desire.none,
@@ -90,6 +111,10 @@ class DesireHelper:
     self.auto_lane_change_timer = 0.0
     self._param_read_counter = 0
     self.against_ticks = 0  # lcabort2pnw: consecutive laneChangeStarting ticks with torque against the change
+    self._nav_st = {}             # navse: last NavStateSE
+    self._nav_enabled = False     # navse: NavTurnDesires toggle
+    self._nav_counter = 0
+    self.nav_desire = log.Desire.none
 
     # nudgelesshighway2pnw: highway/freeway gate for the auto (nudgeless) path — mem-param read of
     # mapd's bridged road class, same guarded-import pattern speedadjust_controller.py uses (a mem
@@ -115,6 +140,62 @@ class DesireHelper:
     # the Lightning's manual nudges start left changes on +torque, the Raven's torque is co-signed with its angle)
     return CS.steeringPressed and ((CS.steeringTorque < 0 and direction == LaneChangeDirection.left) or
                                    (CS.steeringTorque > 0 and direction == LaneChangeDirection.right))
+
+  def _update_nav(self):
+    """navse: NavStateSE every 2 ticks (10 Hz), the toggle every 60 (~3 s). Fail-safe: any error -> no hint."""
+    self._nav_counter += 1
+    if self._nav_counter % 60 == 1:
+      try:
+        self._nav_enabled = self.params.get_bool("NavTurnDesires")
+      except Exception:
+        self._nav_enabled = False
+    if not self._nav_enabled:
+      self._nav_st = {}
+      return
+    if self._nav_counter % 2 == 0 and self.mem_params is not None:
+      try:
+        st = self.mem_params.get("NavStateSE", return_default=True)
+        self._nav_st = st if isinstance(st, dict) else {}
+      except Exception:
+        self._nav_st = {}
+
+  def nav_desire_for(self, carstate):
+    """navse: the route hint for this tick, or Desire.none."""
+    st = self._nav_st
+    if not self._nav_enabled or not st or not st.get("valid"):
+      return log.Desire.none
+    try:
+      age = time.monotonic() - float(st.get("ts") or 0.0)
+      m = (st.get("maneuvers") or [])[0]
+      v = max(0.0, float(carstate.vEgo))
+      d = float(m["dist_m"]) - v * max(0.0, age)
+    except (IndexError, KeyError, TypeError, ValueError):
+      return log.Desire.none
+    if age < 0.0 or age > NAV_STALE_S:
+      return log.Desire.none
+    t = str(m.get("type") or "").lower()
+    mod = str(m.get("modifier") or "").lower()
+    left = mod in ("left", "sharp left", "slight left")
+    right = mod in ("right", "sharp right", "slight right")
+    if t in NAV_TURN_TYPES and mod in ("left", "sharp left", "right", "sharp right"):
+      if carstate.standstill or v >= NAV_TURN_MAX_SPEED:
+        return log.Desire.none
+      preview = min(max(v * NAV_TURN_PREVIEW_S, NAV_TURN_MIN_M), NAV_TURN_MAX_M)
+      if not (-5.0 <= d <= preview):
+        return log.Desire.none
+      if left and carstate.leftBlinker and not carstate.rightBlinker and not carstate.leftBlindspot:
+        return log.Desire.turnLeft
+      if right and carstate.rightBlinker and not carstate.leftBlinker and not carstate.rightBlindspot:
+        return log.Desire.turnRight
+      return log.Desire.none
+    if t in NAV_KEEP_TYPES and (left or right):
+      if not (-10.0 <= d <= _interp(v, NAV_KEEP_SPEEDS, NAV_KEEP_DISTS)):
+        return log.Desire.none
+      if left and carstate.steeringPressed and carstate.steeringTorque > 0 and not carstate.rightBlinker and not carstate.leftBlindspot:
+        return log.Desire.keepLeft
+      if right and carstate.steeringPressed and carstate.steeringTorque < 0 and not carstate.leftBlinker and not carstate.rightBlindspot:
+        return log.Desire.keepRight
+    return log.Desire.none
 
   def update(self, carstate, lateral_active, lane_change_prob):
     v_ego = carstate.vEgo
@@ -173,7 +254,13 @@ class DesireHelper:
     map_class_fresh = 0.0 <= map_class_age <= MAP_CLASS_TTL_S
     on_highway = (map_class_fresh and self._map_highway_class in FREEWAY_CLASSES) or self._speed_armed
 
-    if not lateral_active or self.lane_change_timer > LANE_CHANGE_TIME_MAX:
+    # navse: a driver-confirmed route turn owns the blinker -- no lane change may start from it.
+    self._update_nav()
+    self.nav_desire = self.nav_desire_for(carstate) if lateral_active else log.Desire.none
+    nav_turn = (self.nav_desire in (log.Desire.turnLeft, log.Desire.turnRight) and
+                self.lane_change_state in (LaneChangeState.off, LaneChangeState.preLaneChange))
+
+    if not lateral_active or self.lane_change_timer > LANE_CHANGE_TIME_MAX or nav_turn:
       self.lane_change_state = LaneChangeState.off
       self.lane_change_direction = LaneChangeDirection.none
     else:
@@ -263,6 +350,8 @@ class DesireHelper:
     self.prev_one_blinker = one_blinker
 
     self.desire = DESIRES[self.lane_change_direction][self.lane_change_state]
+    if self.nav_desire != log.Desire.none and self.lane_change_state == LaneChangeState.off:
+      self.desire = self.nav_desire                     # navse
 
     # Send keep pulse once per second during LaneChangeStart.preLaneChange
     if self.lane_change_state in (LaneChangeState.off, LaneChangeState.laneChangeStarting):

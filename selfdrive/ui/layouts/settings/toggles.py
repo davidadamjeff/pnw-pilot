@@ -181,6 +181,19 @@ DESCRIPTIONS = {
     "Show Waze hazards ahead: stopped cars, objects, potholes, roadwork, lane closures and weather. Same "
     "lookup as police reports, no extra quota. Display only."
   ),
+  "NavigationSE": tr_noop(
+    "Turn-by-turn navigation (Mapbox, Swedish voice text, live traffic). Pick the destination on your phone: open "
+    "the address below while the phone is on the same Wi-Fi or is the car's hotspot. The route shows top-left while driving."
+  ),
+  "NavSpeedControl": tr_noop(
+    "Slow down before turns, roundabouts and U-turns on the active route (about 25 km/h for a turn, 30 for a roundabout). "
+    "Reduce-only, needs openpilot speed control and Auto speed reduce not Off. The gas pedal always overrides."
+  ),
+  "NavTurnDesires": tr_noop(
+    "Tell the driving model about the next route maneuver: turn left/right (below 50 km/h, only when YOUR blinker "
+    "points the same way) and keep left/right at exits and forks (only while you nudge the wheel that way). "
+    "Experimental: the model may ignore or mis-handle the hint. Stay ready to steer."
+  ),
   "RoadClosureReports": tr_noop(
     "Show Waze road closures ahead. Same lookup as police reports, no extra quota. Display only."
   ),
@@ -350,6 +363,24 @@ class TogglesLayout(Widget):
       "PoliceReports": (
         lambda: tr("Police Reports (Waze)"),
         DESCRIPTIONS["PoliceReports"],
+        "speed_limit.png",
+        False,
+      ),
+      "NavigationSE": (
+        lambda: tr("Navigation (Mapbox)"),
+        DESCRIPTIONS["NavigationSE"],
+        "speed_limit.png",
+        False,
+      ),
+      "NavSpeedControl": (
+        lambda: tr("Slow Down for Route Turns"),
+        DESCRIPTIONS["NavSpeedControl"],
+        "speed_limit.png",
+        False,
+      ),
+      "NavTurnDesires": (
+        lambda: tr("Route Turn Hints to Model (Experimental)"),
+        DESCRIPTIONS["NavTurnDesires"],
         "speed_limit.png",
         False,
       ),
@@ -562,6 +593,29 @@ class TogglesLayout(Widget):
             _usage_cache["txt"] = ""
         return (base() if callable(base) else tr(base)) + _usage_cache["txt"]
       self._toggles["PoliceReports"].set_description(_police_desc)
+
+    # navse: the phone-page address (IP + secret) under the Navigation toggle, refreshed every 10 s.
+    if "NavigationSE" in self._toggles:
+      _nav_cache = {"t": 0.0, "txt": ""}
+
+      def _nav_desc(base=self._toggles["NavigationSE"]._description):
+        now = time.monotonic()
+        if now - _nav_cache["t"] > 10.0:
+          _nav_cache["t"] = now
+          try:
+            import socket
+            from openpilot.selfdrive.navse import store as _navstore
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+              s.connect(("10.255.255.255", 1))     # UDP connect sends nothing; just picks the outgoing interface
+              ip = s.getsockname()[0]
+            finally:
+              s.close()
+            _nav_cache["txt"] = f" http://{ip}:8088/?k={_navstore.web_token()}"
+          except Exception:
+            _nav_cache["txt"] = " " + tr("(no network: connect Wi-Fi or a hotspot to see the address)")
+        return (base() if callable(base) else tr(base)) + _nav_cache["txt"]
+      self._toggles["NavigationSE"].set_description(_nav_desc)
 
     self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)
 

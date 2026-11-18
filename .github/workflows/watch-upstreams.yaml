@@ -1,0 +1,47 @@
+name: watch upstream features
+
+on:
+  schedule:
+    - cron: "41 4 * * *"      # daily, after the 03:17 Dirk sync
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: watch-upstreams
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: david/3testpnw-se
+          sparse-checkout: .github
+      - name: ensure label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create upstream-watch --color 5319e7 --description "Upstream changed a feature we also have" 2>/dev/null || true
+      - name: check upstreams
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/watch_upstreams.py
+      - name: record state
+        run: |
+          git add -A .github/upstream-watch-state.json .github/UPSTREAM-CHANGES.md 2>/dev/null || git add .github/upstream-watch-state.json
+          if ! git diff --cached --quiet; then
+            git config user.name "upstream-watch[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "upstream-watch: record state [skip ci]"
+            git push origin HEAD:david/3testpnw-se
+          fi
+      - name: alert (issues disabled -> failed run = GitHub email)
+        run: |
+          if [ -f /tmp/upstream_alert ]; then
+            echo "::error::Upstream changed $(cat /tmp/upstream_alert) watched feature(s). See .github/UPSTREAM-CHANGES.md"
+            exit 1
+          fi

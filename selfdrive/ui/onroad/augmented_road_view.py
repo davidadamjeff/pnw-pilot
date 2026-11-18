@@ -13,6 +13,7 @@ from openpilot.selfdrive.ui.onroad.cameraview import CameraView
 from openpilot.selfdrive.ui.onroad.speed_limit import SpeedLimitRenderer  # mapd2xnor
 from openpilot.selfdrive.ui.onroad.ces_status import CesStatusRenderer  # ces2xnor
 from openpilot.selfdrive.ui.onroad.location_services_status import LocationServicesStatusRenderer  # location2pnw
+from openpilot.selfdrive.ui.onroad.nav_se_card import NavSECard  # navse
 from openpilot.selfdrive.ui.onroad.everdrive_status import EverDriveStatusRenderer  # everdrive2pnw
 from openpilot.selfdrive.ui.onroad.confidence_ball import ConfidenceBallRenderer  # ball2pnw
 from openpilot.system.ui.lib.application import gui_app
@@ -56,6 +57,7 @@ class AugmentedRoadView(CameraView):
     self.speed_limit_renderer = SpeedLimitRenderer()  # mapd2xnor
     self.ces_status_renderer = CesStatusRenderer()  # ces2xnor
     self.location_services_renderer = LocationServicesStatusRenderer()  # location2pnw (lower-left)
+    self.nav_se_card = NavSECard()  # navse (top-left, under set speed)
     self.everdrive_status_renderer = EverDriveStatusRenderer()  # everdrive2pnw (lower-right, below CES)
     self.confidence_ball_renderer = ConfidenceBallRenderer()  # ball2pnw (right edge, behind CES overlay)
 
@@ -98,6 +100,7 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer.render(self._content_rect)
     self.confidence_ball_renderer.render(self._content_rect)  # ball2pnw (right edge, BEHIND ces_status)
     self.speed_limit_renderer.render(self._content_rect)  # mapd2xnor
+    self.nav_se_card.render(self._content_rect)  # navse
     # everdrive2pnw: the EverDrive box sits directly BELOW the CES box, so lift CES by its height
     # (+ gap). stack_height is EXACTLY 0.0 whenever EverDrive is hidden — which is the steady state on
     # the Tesla and on a Lightning with no module fitted — so CES then renders exactly where it does

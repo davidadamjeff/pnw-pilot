@@ -63,6 +63,12 @@ def qcomgps(started: bool, params: Params, CP: car.CarParams) -> bool:
 def mapd_running(started: bool, params: Params, CP: car.CarParams) -> bool:
   return os.path.exists(MAPD_BINARY)
 
+def navse(started: bool, params: Params, CP: car.CarParams) -> bool:   # navse: route engine + phone page
+  try:
+    return params.get_bool("NavigationSE")
+  except Exception:
+    return False
+
 def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
   return True
 
@@ -140,7 +146,9 @@ procs = [
   # where before this feature a crash left mapd on its own subscription, untouched. Non-control daemon,
   # same reasoning as `ui`/`card` above.
   PythonProcess("mapd_configd", "system.mapd.mapd_configd", always_run, enabled=TICI, restart_if_crash=True),
-  PythonProcess("location_servicesd", "system.location_services.location_servicesd", always_run, enabled=TICI),  # location2pnw: display-only, NON_ESSENTIAL
+  PythonProcess("location_servicesd", "system.location_services.location_servicesd", always_run, enabled=TICI),
+  PythonProcess("navd_se", "selfdrive.navse.navd", navse, enabled=TICI),        # navse: display/advice only, NON_ESSENTIAL
+  PythonProcess("navweb_se", "selfdrive.navse.web", navse, enabled=TICI),       # navse: phone destination page :8088  # location2pnw: display-only, NON_ESSENTIAL
   PythonProcess("tombstoned", "system.tombstoned", always_run, enabled=not PC),
   # update2pnw: run the updater onroad too (stock is only_offroad) — downloads/finalize only STAGE
   # to /data/safe_staging; the swap still happens exclusively at reboot, so driving with a fetch in
