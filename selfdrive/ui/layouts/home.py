@@ -7,6 +7,8 @@ from openpilot.selfdrive.ui.widgets.offroad_alerts import UpdateAlert, OffroadAl
 from openpilot.selfdrive.ui.widgets.exp_mode_button import ExperimentalModeButton
 from openpilot.selfdrive.ui.widgets.prime import PrimeWidget
 from openpilot.selfdrive.ui.widgets.setup import SetupWidget
+from openpilot.selfdrive.ui.widgets.standby_se import StandbyClock, StandbyInfo  # standby-se
+from openpilot.selfdrive.ui.ui_state import ui_state  # standby-se
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
 from openpilot.system.ui.lib.multilang import tr, trn
@@ -57,6 +59,8 @@ class HomeLayout(Widget):
 
     self._prime_widget = PrimeWidget()
     self._setup_widget = SetupWidget()
+    self._standby_clock = StandbyClock()  # standby-se: clock/date/week instead of the empty prime slot
+    self._standby_info = StandbyInfo()    # standby-se: nav link + calibration instead of the Firehose card
 
     self._exp_mode_button = ExperimentalModeButton()
     self._setup_callbacks()
@@ -191,7 +195,10 @@ class HomeLayout(Widget):
     self.offroad_alert.render(self.content_rect)
 
   def _render_left_column(self):
-    self._prime_widget.render(self.left_column_rect)
+    if ui_state.prime_state.is_prime():
+      self._prime_widget.render(self.left_column_rect)
+    else:
+      self._standby_clock.render(self.left_column_rect)   # standby-se
 
   def _render_right_column(self):
     exp_height = 125
@@ -206,7 +213,10 @@ class HomeLayout(Widget):
       self.right_column_rect.width,
       self.right_column_rect.height - exp_height - SPACING,
     )
-    self._setup_widget.render(setup_rect)
+    if ui_state.prime_state.is_paired():
+      self._standby_info.render(setup_rect)                # standby-se: replaces the Firehose prompt
+    else:
+      self._setup_widget.render(setup_rect)
 
   def _refresh(self):
     self._version_text = self._get_version_text()
