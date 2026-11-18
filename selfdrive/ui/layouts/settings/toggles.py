@@ -612,7 +612,7 @@ class TogglesLayout(Widget):
             finally:
               s.close()
             _tok = _navstore.web_token()
-            _nav_cache["txt"] = f" http://{socket.gethostname()}.local:8088/?k={_tok} (or http://{ip}:8088/?k={_tok})"
+            _nav_cache["txt"] = f" http://{socket.gethostname()}.local/{_tok} (or http://{ip}/{_tok})"
           except Exception:
             _nav_cache["txt"] = " " + tr("(no network: connect Wi-Fi or a hotspot to see the address)")
         return (base() if callable(base) else tr(base)) + _nav_cache["txt"]

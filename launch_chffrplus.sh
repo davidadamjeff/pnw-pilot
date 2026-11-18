@@ -149,6 +149,12 @@ function launch {
     fi
   fi
 
+  # navse: serve the phone page on port 80 too (http://<name>.local/<key>, no port to type). Ports < 1024 need
+  # root and the page runs as comma, so redirect 80 -> 8088 in the kernel. The nf_tables backend is not in the
+  # AGNOS kernel, hence iptables-legacy; IPv4 only (no IPv6 nat table), browsers fall back to IPv4.
+  sudo iptables-legacy -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8088 2>/dev/null || \
+    sudo iptables-legacy -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8088 2>/dev/null || true
+
   # start manager
   cd system/manager
   if [ ! -f $DIR/prebuilt ]; then

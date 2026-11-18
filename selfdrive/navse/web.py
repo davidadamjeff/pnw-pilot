@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""navse: phone page for choosing a destination. http://<comma-ip>:8088/?k=<token>
+"""navse: phone page for choosing a destination. http://<hostname>.local/<key>  (port 80 is redirected to 8088
+by launch_chffrplus.sh; http://<ip>:8088/?k=<key> always works too)
 
 Stdlib only. The token (store.web_token, shown in Settings -> Toggles -> Navigation) is required on
 every request (query ?k= once, then a cookie), so other people on the same Wi-Fi/hotspot cannot set a
@@ -107,8 +108,16 @@ class Handler(BaseHTTPRequestHandler):
   def do_GET(self):
     ok, set_cookie = self._authed()
     url = urllib.parse.urlparse(self.path)
+    if url.path.strip("/") == store.web_token():          # http://<name>.local/<key> -> remember it, then the page
+      self.send_response(302)
+      self.send_header("Location", "/")
+      self.send_header("Set-Cookie", f"navk={store.web_token()}; Max-Age=31536000; Path=/; SameSite=Strict; HttpOnly")
+      self.send_header("Content-Length", "0")
+      self.end_headers()
+      return
     if not ok:
-      return self._send(403, "<h2>Öppna länken från comma: Settings → Toggles → Navigation</h2>", "text/html")
+      return self._send(403, "<meta name=viewport content='width=device-width'><h2>Skriv adressen med nyckeln, "
+                        "t.ex. http://namn.local/nyckel (se comma: Settings → Toggles → Navigation)</h2>", "text/html")
     if url.path == "/":
       return self._send(200, PAGE, "text/html", cookie=set_cookie)
     if url.path == "/api/state":
@@ -156,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
       if path == "/api/hostname":
         name = hostname.reset() if b.get("reset") else hostname.set_name(b.get("name"))
         cloudlog.event("navse_hostname", name=name, reset=bool(b.get("reset")))
-        return self._send(200, {"hostname": name, "url": f"http://{name}.local:{PORT}/?k={store.web_token()}"})
+        return self._send(200, {"hostname": name, "url": f"http://{name}.local/{store.web_token()}"})
       if path == "/api/fav/delete":
         return self._send(200, {"places": store.delete_favorite(int(b.get("index", -1)))})
     except mapbox.MapboxError as e:
