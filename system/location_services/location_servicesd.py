@@ -42,6 +42,7 @@ from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.time_helpers import wall_time_valid
 from openpilot.system.location_services import geo
+from openpilot.system.location_services import police_budget  # policebudget-se
 
 # POI data is bundled IN the distribution next to this daemon (small enough to vendor). The daemon
 # reloads on file-mtime, so editing these on-device still works for quick testing.
@@ -406,6 +407,7 @@ class PoliceUpdater(threading.Thread):
                                     #   that have left the feed but that we have not driven past yet
     self._err = ""                  # short last-error tag for the UI on non-ok (e.g. "daily limit", "HTTP 403", "no key")
     self._stop = threading.Event()
+    self._budget_gate = None        # policebudget-se: own-key rationing (police_budget.DriveGate)
     self._speed_ok = False          # wazespeedgate2pnw: hysteresis state for the >=45mph poll gate (fail-closed)
     self._poll_state_logged = (None, None)   # policemiss2pnw: last logged (state, reason), change-only
     # wazespeedgate2pnw: stable per-device id sent to the proxy so IT can enforce a per-device daily
@@ -431,14 +433,14 @@ class PoliceUpdater(threading.Thread):
     """policemiss2pnw: the speed gate's current verdict -- True while we are polling at highway speed."""
     return self._speed_ok
 
-  def _hold(self, err):
+  def _hold(self, err, retain_s=POLICE_RETAIN_S):
     """policemiss2pnw: we are NOT polling (speed gate off) or the poll FAILED -- keep publishing what we
     already fetched instead of blanking the line. Measured 2026-09-07..13: 57 min on freeway-class roads
     below 43 mph (traffic) and every failed/backed-off poll blanked reports the device already held.
     Everything held is published `retained` -> unconfirmed tier (amber), no `cap`, so a report we are not
     re-verifying can display but can never command a slowdown. State "held", never "ok": an empty hold
     must not read as a false "Clear" (_line_police)."""
-    held, self._retain = merge_retained_police(self._retain, [], _now_epoch())
+    held, self._retain = merge_retained_police(self._retain, [], _now_epoch(), retain_s=retain_s)
     with self._lock:
       self._alerts, self._state, self._err = held, "held", err
 
@@ -541,9 +543,11 @@ class PoliceUpdater(threading.Thread):
     # "key":"ak_..."}). Same transform as the AWS proxy (data.alerts, magvar=None, ISO->epoch-ms), so
     # snapshot()/_line_police()/the UI are untouched. NOTE: direct mode has NO budget / per-device
     # tracking -- that exists only in the AWS proxy; a direct-key user owns their own OpenWebNinja spend.
-    q = urllib.parse.urlencode({"bottom_left": f"{lat - POLICE_BBOX_DEG},{lon - POLICE_BBOX_DEG}",
-                                "top_right": f"{lat + POLICE_BBOX_DEG},{lon + POLICE_BBOX_DEG}",
-                                "alert_types": "POLICE", "max_jams": 0, "max_alerts": 20})
+    bb = float(cfg.get("_bbox_deg") or POLICE_BBOX_DEG)        # policebudget-se: wider box per rare poll
+    q = urllib.parse.urlencode({"bottom_left": f"{lat - bb},{lon - bb}",
+                                "top_right": f"{lat + bb},{lon + bb}",
+                                "alert_types": "POLICE", "max_jams": 0,
+                                "max_alerts": int(cfg.get("_max_alerts") or 20)})
     req = urllib.request.Request(f"{cfg['url']}?{q}", headers={"x-api-key": cfg["key"]})
     with urllib.request.urlopen(req, timeout=POLICE_TIMEOUT_S) as resp:
       raw = resp.read()
@@ -639,6 +643,52 @@ class PoliceUpdater(threading.Thread):
             self._err = "no source" if (nosrc and enabled) else ""   # surface the actionable case; disabled = plain "-"
           self._log_poll_state("off", "no source" if enabled else "disabled")
           self._stop.wait(POLICE_POLL_S)
+          continue
+        # policebudget-se: own OpenWebNinja key on a tiny monthly quota ({"source":"direct","key":..,
+        # "budget":{..}} in PROXY_CFG). Replaces the 45 mph gate: a poll window opens only on a long drive
+        # (>= 30 min, or >= 80 km/h for 10 min), then polls hourly until the drive ends, hard-capped per
+        # month. Between polls the last result is HELD (amber, display-only, never a slowdown cap).
+        budget = cfg.get("budget")
+        if str(cfg.get("source") or "").strip().lower() == "direct" and cfg.get("key") and budget:
+          bs = police_budget.settings(budget)
+          if self._budget_gate is None or self._budget_gate.s != bs:
+            self._budget_gate = police_budget.DriveGate(bs)
+          g = self._budget_gate
+          now_m = time.monotonic()
+          g.update(now_m, self._cur_speed())
+          self._speed_ok = g.active                          # armed() -> police line shows while the window is open
+          gps = self._cur_gps()
+          if not g.due(now_m) or gps is None:
+            why = g.reason(now_m)
+            if g.active and police_budget.quota_left(bs["monthly_cap"]) <= 0:
+              why = "own key: month quota used"
+            self._hold(why, retain_s=bs["interval_s"] + 900)
+            self._log_poll_state("budget-wait", why)
+            self._stop.wait(POLICE_GATE_RECHECK_S)
+            continue
+          if police_budget.quota_left(bs["monthly_cap"]) <= 0:
+            g.mark_polled(now_m)                               # don't re-check every 5 s; next window in interval_s
+            self._hold("own key: month quota used", retain_s=bs["interval_s"] + 900)
+            self._log_poll_state("budget-exhausted", "monthly cap")
+            self._stop.wait(POLICE_GATE_RECHECK_S)
+            continue
+          used = police_budget.record_use()                    # count BEFORE sending: a failed call still costs
+          g.mark_polled(now_m)
+          try:
+            alerts = self._poll(dict(cfg, _bbox_deg=bs["bbox_deg"], _max_alerts=bs["max_alerts"]), gps[0], gps[1])
+            alerts, self._retain = merge_retained_police(self._retain, alerts, _now_epoch(),
+                                                         retain_s=bs["interval_s"] + 900)
+            with self._lock:
+              self._alerts, self._state, self._err = alerts, "ok", ""
+            cloudlog.info("location_services: police own-key poll ok (%d alerts, %d/%d used this month)",
+                          len(alerts), used, int(bs["monthly_cap"]))
+            self._log_poll_state("budget-poll", "ok", used=used)
+          except Exception as e:                               # no retry: retrying burns quota
+            self._hold(f"own key: {type(e).__name__}", retain_s=bs["interval_s"] + 900)
+            cloudlog.warning("location_services: police own-key poll failed (%s), %d/%d used", type(e).__name__,
+                             used, int(bs["monthly_cap"]))
+            self._log_poll_state("budget-poll", "failed", used=used)
+          self._stop.wait(POLICE_GATE_RECHECK_S)
           continue
         # wazespeedgate2pnw: gate the paid upstream poll on highway speed (cost control) -- only poll
         # while actually driving >=45 mph, with hysteresis down to <43 mph before disarming. Speed is

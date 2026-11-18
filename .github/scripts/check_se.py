@@ -22,7 +22,8 @@ if subprocess.run(["bash", "-n", "launch_env.sh"]).returncode != 0:
 
 # 2. our changes are still there
 MARKERS = {
-  "system/location_services/location_servicesd.py": ["class SpeedCameras", "class CameraRefresher", "def _line_camera", 'out["camera"]'],
+  "system/location_services/location_servicesd.py": ["class SpeedCameras", "class CameraRefresher", "def _line_camera", 'out["camera"]', "policebudget-se", "police_budget.DriveGate"],
+  "system/location_services/police_budget.py": ["class DriveGate", "def record_use"],
   "selfdrive/ui/onroad/location_services_status.py": ["def _camera_line"],
   "selfdrive/controls/lib/speedadjust_pnw/speedadjust_controller.py": ["def _camera_cap", "cc = self._camera_cap(v_ego)"],
   "common/connect_backend.py": ['BACKEND_COMMA = "comma"', "BACKEND_COMMA)", "def with_pairing_host"],
