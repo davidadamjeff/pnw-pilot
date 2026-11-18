@@ -279,6 +279,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // value into this key once (see TogglesInvertedMigrated) so upgrading never flips anyone's live behavior.
     {"DisableLocationServices", {PERSISTENT, BOOL, "0"}},
     {"PoliceReports", {PERSISTENT, BOOL, "1"}},  // policebudget-se: Waze police reports on/off (own key or proxy). Default ON.
+    {"AccidentReports", {PERSISTENT, BOOL, "1"}},     // wazetypes-se: Waze accidents (own key, same lookup). Default ON.
+    {"HazardReports", {PERSISTENT, BOOL, "1"}},       // wazetypes-se: Waze hazards (own key, same lookup). Default ON.
+    {"RoadClosureReports", {PERSISTENT, BOOL, "1"}},  // wazetypes-se: Waze road closures (own key, same lookup). Default ON.
     // toggles-invert2pnw: one-shot guard for manager_init()'s opt-out-toggle migration (NudgelessLaneChange
     // -> NudgeForLaneChange, FordAngleLateral -> NoFordAngleSteering, LocationServicesEnabled ->
     // DisableLocationServices, ShowSpeedLimit -> NoSpeedLimitDisplay). Set True the first time the

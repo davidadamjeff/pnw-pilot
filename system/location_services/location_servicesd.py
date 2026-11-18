@@ -408,6 +408,10 @@ class PoliceUpdater(threading.Thread):
     self._err = ""                  # short last-error tag for the UI on non-ok (e.g. "daily limit", "HTTP 403", "no key")
     self._stop = threading.Event()
     self._budget_gate = None        # policebudget-se: own-key rationing (police_budget.DriveGate)
+    self._other: list = []          # wazetypes-se: non-police alerts (accident/hazard/closure) from the last own-key poll
+    self._other_ts = 0.0            # wazetypes-se: epoch of that poll (held until interval_s + 15 min)
+    self._other_keep_s = 0.0
+    self._types = ("POLICE",)       # wazetypes-se: alert types enabled by the per-type toggles
     self._speed_ok = False          # wazespeedgate2pnw: hysteresis state for the >=45mph poll gate (fail-closed)
     self._poll_state_logged = (None, None)   # policemiss2pnw: last logged (state, reason), change-only
     # wazespeedgate2pnw: stable per-device id sent to the proxy so IT can enforce a per-device daily
@@ -428,6 +432,25 @@ class PoliceUpdater(threading.Thread):
   def snapshot(self):
     with self._lock:
       return list(self._alerts), self._state, self._err
+
+  def others(self, types):
+    """wazetypes-se: held non-police alerts of the currently enabled types, [] once older than the hold."""
+    with self._lock:
+      if not self._other or _now_epoch() - self._other_ts > self._other_keep_s:
+        return []
+      return [a for a in self._other if a.get("kind") in types]
+
+  def enabled_types(self) -> tuple:
+    """wazetypes-se: Waze alert types whose toggle is on. A missing (old build) key counts as on."""
+    out = []
+    for typ, key in police_budget.WAZE_TYPES.items():
+      try:
+        on = self._params.get_bool(key)
+      except Exception:
+        on = True
+      if on:
+        out.append(typ)
+    return tuple(out)
 
   def armed(self) -> bool:
     """policemiss2pnw: the speed gate's current verdict -- True while we are polling at highway speed."""
@@ -538,7 +561,7 @@ class PoliceUpdater(threading.Thread):
     except (KeyError, TypeError, ValueError, AttributeError):
       return None
 
-  def _poll(self, cfg, lat, lon):
+  def _poll(self, cfg, lat, lon, types=("POLICE",)):
     # Direct OpenWebNinja (a user managing their OWN key via police_proxy.json {"source":"direct",
     # "key":"ak_..."}). Same transform as the AWS proxy (data.alerts, magvar=None, ISO->epoch-ms), so
     # snapshot()/_line_police()/the UI are untouched. NOTE: direct mode has NO budget / per-device
@@ -546,7 +569,7 @@ class PoliceUpdater(threading.Thread):
     bb = float(cfg.get("_bbox_deg") or POLICE_BBOX_DEG)        # policebudget-se: wider box per rare poll
     q = urllib.parse.urlencode({"bottom_left": f"{lat - bb},{lon - bb}",
                                 "top_right": f"{lat + bb},{lon + bb}",
-                                "alert_types": "POLICE", "max_jams": 0,
+                                "alert_types": ",".join(types), "max_jams": 0,
                                 "max_alerts": int(cfg.get("_max_alerts") or 20)})
     req = urllib.request.Request(f"{cfg['url']}?{q}", headers={"x-api-key": cfg["key"]})
     with urllib.request.urlopen(req, timeout=POLICE_TIMEOUT_S) as resp:
@@ -557,13 +580,14 @@ class PoliceUpdater(threading.Thread):
       raise ValueError("unexpected alerts payload")
     out = []
     for a in alerts:
-      if not isinstance(a, dict) or a.get("type") != "POLICE":
+      if not isinstance(a, dict) or a.get("type") not in types:
         continue
       try:
         out.append({"lat": float(a["latitude"]), "lon": float(a["longitude"]),
                     "magvar": None, "ts": _iso_to_epoch_ms(a.get("publish_datetime_utc")),
                     "uuid": a.get("alert_id"), "street": a.get("street") or "",
-                    "town": a.get("city") or "", "thumbs": a.get("num_thumbs_up")})
+                    "town": a.get("city") or "", "thumbs": a.get("num_thumbs_up"),
+                    "kind": a.get("type"), "subtype": a.get("subtype")})   # wazetypes-se
       except (KeyError, TypeError, ValueError):
         continue
     return out
@@ -632,14 +656,14 @@ class PoliceUpdater(threading.Thread):
         try:
           # toggles-invert2pnw: DisableLocationServices is opt-out (ON == disabled); enabled by default.
           enabled = not self._params.get_bool("DisableLocationServices")   # PERSISTENT store (was wrongly read
-          try:                                                              # policebudget-se: own on/off toggle
-            enabled = enabled and self._params.get_bool("PoliceReports")
-          except Exception:
-            pass                                                            # unregistered key (old build) -> stay on
+          self._types = self.enabled_types()                               # wazetypes-se: per-type toggles
                                                                             # from mem -> always False -> never polled)
         except Exception:
           pass
         use_proxy = self._use_proxy(cfg)                       # keyless edge proxy (default) vs legacy direct
+        own_budget = (str(cfg.get("source") or "").strip().lower() == "direct" and bool(cfg.get("key"))
+                      and bool(cfg.get("budget")))
+        enabled = enabled and bool(self._types) and (own_budget or "POLICE" in self._types)   # wazetypes-se
         nosrc = not (use_proxy or cfg.get("key"))              # neither a proxy_url nor a key -> nodata, don't poll
         if nosrc or not enabled:
           with self._lock:
@@ -679,13 +703,18 @@ class PoliceUpdater(threading.Thread):
           used = police_budget.record_use()                    # count BEFORE sending: a failed call still costs
           g.mark_polled(now_m)
           try:
-            alerts = self._poll(dict(cfg, _bbox_deg=bs["bbox_deg"], _max_alerts=bs["max_alerts"]), gps[0], gps[1])
+            allw = self._poll(dict(cfg, _bbox_deg=bs["bbox_deg"], _max_alerts=bs["max_alerts"]), gps[0], gps[1],
+                              types=self._types)
+            alerts = [a for a in allw if a.get("kind") == "POLICE"]          # wazetypes-se: split by kind
+            with self._lock:
+              self._other = [a for a in allw if a.get("kind") != "POLICE"]
+              self._other_ts, self._other_keep_s = _now_epoch(), float(bs["interval_s"] + 900)
             alerts, self._retain = merge_retained_police(self._retain, alerts, _now_epoch(),
                                                          retain_s=bs["interval_s"] + 900)
             with self._lock:
               self._alerts, self._state, self._err = alerts, "ok", ""
-            cloudlog.info("location_services: police own-key poll ok (%d alerts, %d/%d used this month)",
-                          len(alerts), used, int(bs["monthly_cap"]))
+            cloudlog.info("location_services: own-key poll ok (%d police, %d other, %d/%d used this month)",
+                          len(alerts), len(allw) - len(alerts), used, int(bs["monthly_cap"]))
             self._log_poll_state("budget-poll", "ok", used=used)
           except Exception as e:                               # no retry: retrying burns quota
             self._hold(f"own key: {type(e).__name__}", retain_s=bs["interval_s"] + 900)
@@ -1932,6 +1961,38 @@ class CameraRefresher:
         pass
 
 
+WAZE_OTHER_AHEAD_M = 5000.0     # wazetypes-se: show accident/hazard/closure up to 5 km ahead ON OUR ROAD
+WAZE_OTHER_PERP_M = 60.0        # ...within this of the mapd path (a closed side street is not "ahead")
+WAZE_OTHER_FALLBACK_M = 2000.0  # no mapd path: straight-line, narrower and shorter
+WAZE_OTHER_FALLBACK_CONE = 25.0
+
+
+def _line_waze_other(items, lat, lon, brg, path=None):
+  """wazetypes-se: nearest held accident / hazard / road closure AHEAD on our road -> overlay dict.
+  Same geometry as the camera line: on the mapd path within WAZE_OTHER_PERP_M, else a narrow cone."""
+  if brg is None:
+    return {"state": "nodata"}
+  best = None
+  for it in items or []:
+    try:
+      d = geo.haversine_m(lat, lon, it["lat"], it["lon"])
+      if d > WAZE_OTHER_AHEAD_M:
+        continue
+      a = geo.ahead(path, lat, lon, brg, it["lat"], it["lon"], cone_deg=WAZE_OTHER_FALLBACK_CONE,
+                    max_fallback_m=WAZE_OTHER_FALLBACK_M)
+    except (KeyError, TypeError, ValueError):
+      continue
+    if a is None or (a["source"] == "path" and a["perp_m"] > WAZE_OTHER_PERP_M):
+      continue
+    if best is None or d < best[1]:
+      best = (it, d)
+  if best is None:
+    return {"state": "nodata"}
+  it, d = best
+  return {"state": "ok", "kind": it.get("kind"), "label": police_budget.type_label(it.get("kind"), it.get("subtype")),
+          "dist_m": int(round(d / 10.0) * 10), "street": it.get("street") or ""}
+
+
 def _line_camera(cams, lat, lon, brg, path):
   """Nearest speed camera AHEAD on our road, monitoring OUR direction. Returns (cam, dist_mi) or None."""
   if brg is None:
@@ -2081,6 +2142,16 @@ def main():
     except Exception:
       cloudlog.exception("location_services: speed camera line failed")
       out["camera"] = {"state": "nodata"}
+
+    # wazetypes-se: accident / hazard / road closure from the same hourly own-key lookup. Display-only.
+    try:
+      types = police.enabled_types()
+      out["waze"] = (_line_waze_other(police.others(types), lat, lon, brg, path) if have_gps else {"state": "nodata"})
+      if "POLICE" not in types:
+        out["police"] = {"state": "off"}                     # toggle off -> no police line at all
+    except Exception:
+      cloudlog.exception("location_services: waze line failed")
+      out["waze"] = {"state": "nodata"}
 
     # reason-everywhere (driver req 2026-08-13): the police-POLL state reason (speed <Nmph / budget
     # exceeded / daily limit / no source) is a diagnostic -- surface it on the police line even off a

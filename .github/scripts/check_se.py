@@ -22,17 +22,17 @@ if subprocess.run(["bash", "-n", "launch_env.sh"]).returncode != 0:
 
 # 2. our changes are still there
 MARKERS = {
-  "system/location_services/location_servicesd.py": ["class SpeedCameras", "class CameraRefresher", "def _line_camera", 'out["camera"]', "policebudget-se", "police_budget.DriveGate"],
-  "system/location_services/police_budget.py": ["class DriveGate", "def record_use"],
-  "selfdrive/ui/onroad/location_services_status.py": ["def _camera_line"],
+  "system/location_services/location_servicesd.py": ["class SpeedCameras", "class CameraRefresher", "def _line_camera", 'out["camera"]', "policebudget-se", "police_budget.DriveGate", "def _line_waze_other", 'out["waze"]', "enabled_types"],
+  "system/location_services/police_budget.py": ["class DriveGate", "def record_use", "WAZE_TYPES", "def usage_summary"],
+  "selfdrive/ui/onroad/location_services_status.py": ["def _camera_line", "def _waze_line"],
   "selfdrive/controls/lib/speedadjust_pnw/speedadjust_controller.py": ["def _camera_cap", "cc = self._camera_cap(v_ego)"],
   "common/connect_backend.py": ['BACKEND_COMMA = "comma"', "BACKEND_COMMA)", "def with_pairing_host"],
   "launch_env.sh": ['"$CONNECT_BACKEND" = "4"', "https://api.commadotai.com"],
   "system/loggerd/uploader.py": ["def _comma_backend", "if self._comma:"],
   "system/ui/widgets/network.py": ['tr("comma")'],
   "selfdrive/ui/widgets/prime.py": ["commabackend-se"],
-  "common/params_keys.h": ['"PoliceReports"'],
-  "selfdrive/ui/layouts/settings/toggles.py": ['"PoliceReports": ('],
+  "common/params_keys.h": ['"PoliceReports"', '"AccidentReports"', '"HazardReports"', '"RoadClosureReports"'],
+  "selfdrive/ui/layouts/settings/toggles.py": ['"PoliceReports": (', '"HazardReports": (', "usage_summary"],
   ".gitmodules": ["https://github.com/dirkpetersen/pnw-panda.git", "https://github.com/dirkpetersen/pnw-opendbc.git"],
 }
 for f, needles in MARKERS.items():

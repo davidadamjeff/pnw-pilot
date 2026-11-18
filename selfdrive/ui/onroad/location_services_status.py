@@ -206,6 +206,24 @@ class LocationServicesStatusRenderer(Widget):
     color = _C.RED if (d is not None and d <= 300) else _C.ORANGE
     return txt, color
 
+  # wazetypes-se: accident / hazard / road closure ahead (Waze, own key). Shown only when one is ahead.
+  def _waze_line(self):
+    w = self._st.get("waze", {})
+    if w.get("state") != "ok":
+      return None
+    d = w.get("dist_m")
+    if d is None:
+      dist = ""
+    elif self._metric:
+      dist = f"{d / 1000.0:.1f} km" if d >= 1000 else f"{int(round(d / 50.0) * 50)} m"
+    else:
+      dist = self._dist_text(d / 1609.344)
+    txt = f"{w.get('label') or 'Waze'}   {dist}"
+    if w.get("street"):
+      txt += f"  {w['street']}"
+    color = _C.RED if w.get("kind") == "ACCIDENT" else (_C.ORANGE if w.get("kind") == "ROAD_CLOSED" else _C.AMBER)
+    return txt, color
+
   def _wrap_px(self, text, font, fs, max_w):
     """Greedy PIXEL-measured wrap to max_w, breaking only at space runs and hanging-indenting
     continuation lines (_CONT_INDENT). Operates on string slices (not split/rejoin) so the
@@ -248,8 +266,12 @@ class LocationServicesStatusRenderer(Widget):
     # policemiss2pnw: off a mapd "freeway" (every 2-lane highway) the daemon now publishes a police report
     # while polling at highway speed. Show the line when there IS one; keep the surface-street box free of
     # the "Police -" / reason line otherwise.
-    if freeway or self._st.get("police", {}).get("state") == "alert":
+    _pst = self._st.get("police", {}).get("state")
+    if _pst != "off" and (freeway or _pst == "alert"):        # wazetypes-se: "off" = Police toggle off
       content.append((*self._police_line(), self.font))
+    wz = self._waze_line()                     # wazetypes-se
+    if wz is not None:
+      content.append((*wz, self.font))
     cam = self._camera_line()                  # speedcam-se
     if cam is not None:
       content.append((*cam, self.font))

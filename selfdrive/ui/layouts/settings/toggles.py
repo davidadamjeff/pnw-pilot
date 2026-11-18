@@ -1,3 +1,4 @@
+import time
 from cereal import log
 from openpilot.common.params import Params, UnknownKeyName
 from openpilot.system.ui.widgets import Widget
@@ -172,6 +173,17 @@ DESCRIPTIONS = {
     "(after 30 minutes, or after 10 minutes above 80 km/h) and then once an hour, so the free monthly quota "
     "lasts. Needs internet in the car (e.g. a phone hotspot). Turn OFF to stop all police lookups."
   ),
+  "AccidentReports": tr_noop(
+    "Show Waze accidents ahead. Fetched in the same hourly lookup as police reports (own Waze key), so it "
+    "costs no extra quota. Display only, never slows the car."
+  ),
+  "HazardReports": tr_noop(
+    "Show Waze hazards ahead: stopped cars, objects, potholes, roadwork, lane closures and weather. Same "
+    "lookup as police reports, no extra quota. Display only."
+  ),
+  "RoadClosureReports": tr_noop(
+    "Show Waze road closures ahead. Same lookup as police reports, no extra quota. Display only."
+  ),
   "EvIncludeLevel2": tr_noop(
     "Also show slow Level 2 (AC) chargers in the EV line, not just DC-fast. Off by default."
   ),
@@ -338,6 +350,24 @@ class TogglesLayout(Widget):
       "PoliceReports": (
         lambda: tr("Police Reports (Waze)"),
         DESCRIPTIONS["PoliceReports"],
+        "speed_limit.png",
+        False,
+      ),
+      "AccidentReports": (
+        lambda: tr("Accidents (Waze)"),
+        DESCRIPTIONS["AccidentReports"],
+        "speed_limit.png",
+        False,
+      ),
+      "HazardReports": (
+        lambda: tr("Hazards (Waze)"),
+        DESCRIPTIONS["HazardReports"],
+        "speed_limit.png",
+        False,
+      ),
+      "RoadClosureReports": (
+        lambda: tr("Road Closures (Waze)"),
+        DESCRIPTIONS["RoadClosureReports"],
         "speed_limit.png",
         False,
       ),
@@ -514,6 +544,24 @@ class TogglesLayout(Widget):
       # dmroad2pnw: insert the Driver Monitoring timeout selector right after the Always-On DM toggle
       if param == "AlwaysOnDM":
         self._toggles["DmMode"] = self._dm_mode_setting
+
+    # wazetypes-se: show this month's own-key lookups ("12/50") under the Police Reports toggle. Read with a
+    # 5 s cache (the description is re-evaluated every frame); any failure just drops the suffix.
+    if "PoliceReports" in self._toggles:
+      _usage_cache = {"t": 0.0, "txt": ""}
+
+      def _police_desc(base=self._toggles["PoliceReports"]._description):
+        now = time.monotonic()
+        if now - _usage_cache["t"] > 5.0:
+          _usage_cache["t"] = now
+          try:
+            from openpilot.system.location_services import police_budget
+            used, cap = police_budget.usage_summary()
+            _usage_cache["txt"] = (" " + tr("Waze lookups this month: {}/{}.").format("?" if used is None else used, cap))
+          except Exception:
+            _usage_cache["txt"] = ""
+        return (base() if callable(base) else tr(base)) + _usage_cache["txt"]
+      self._toggles["PoliceReports"].set_description(_police_desc)
 
     self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)
 

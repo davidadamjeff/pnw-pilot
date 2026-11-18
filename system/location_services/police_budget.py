@@ -6,7 +6,7 @@ The free OpenWebNinja plan allows 50 requests/month, so polling is rationed:
     activate_speed_hold_s (10 min);
   * once open: poll immediately, then every interval_s (default 1 h) until the drive ends;
   * a drive ends after idle_end_s (10 min) without motion (speed < moving_kmh) or without GPS speed;
-  * a persistent per-month counter hard-stops at monthly_cap (default 45, 5 spare under the 50 limit).
+  * a persistent per-month counter hard-stops at monthly_cap (default 50, the free plan's limit).
 Pure/stdlib so it is unit-testable off-device. Times are monotonic seconds; the counter file is the
 only persistence. Never raises: a broken counter file fails CLOSED (no poll)."""
 import json
@@ -22,9 +22,62 @@ DEFAULTS = {
   "moving_kmh": 5.0,
   "idle_end_s": 600,
   "bbox_deg": 0.8,          # ~±90 km lat: an hourly poll should cover the next hour of driving
-  "max_alerts": 50,
+  "max_alerts": 200,        # API max; results are newest-first, so fresh police reports are never crowded out
 }
 USAGE_FILE = "/data/pnw/location/police_budget_usage.json"
+CFG_FILE = "/data/pnw/location/police_proxy.json"
+
+# wazetypes-se: Waze alert types fetched in the SAME lookup (no extra quota), each behind its own toggle.
+# Names verified against a live OpenWebNinja response (2026-11-18, Stockholm): POLICE, HAZARD,
+# ROAD_CLOSED, JAM; ACCIDENT accepted by the alert_types filter.
+WAZE_TYPES = {
+  "POLICE": "PoliceReports",
+  "ACCIDENT": "AccidentReports",
+  "HAZARD": "HazardReports",
+  "ROAD_CLOSED": "RoadClosureReports",
+}
+_HAZARD_LABELS = {
+  "HAZARD_ON_ROAD_POT_HOLE": "Pothole",
+  "HAZARD_ON_ROAD_LANE_CLOSED": "Lane closed",
+  "HAZARD_ON_ROAD_CONSTRUCTION": "Roadwork",
+  "HAZARD_ON_ROAD_CAR_STOPPED": "Stopped car",
+  "HAZARD_ON_SHOULDER_CAR_STOPPED": "Stopped car (shoulder)",
+  "HAZARD_ON_ROAD_OBJECT": "Object on road",
+  "HAZARD_ON_ROAD_ROAD_KILL": "Roadkill",
+  "HAZARD_ON_SHOULDER_ANIMALS": "Animals",
+  "HAZARD_ON_ROAD_ICE": "Ice",
+  "HAZARD_WEATHER_FOG": "Fog",
+  "HAZARD_WEATHER_FLOOD": "Flood",
+  "HAZARD_WEATHER_HAIL": "Hail",
+  "HAZARD_WEATHER_HEAVY_SNOW": "Heavy snow",
+}
+
+
+def type_label(typ, subtype) -> str:
+  """Short English overlay label for a non-police Waze alert."""
+  if typ == "ACCIDENT":
+    return "Major accident" if subtype == "ACCIDENT_MAJOR" else "Accident"
+  if typ == "ROAD_CLOSED":
+    return "Road closed"
+  if typ == "HAZARD":
+    if subtype in _HAZARD_LABELS:
+      return _HAZARD_LABELS[subtype]
+    if subtype and str(subtype).startswith("HAZARD_WEATHER"):
+      return "Weather"
+    return "Hazard"
+  return str(typ or "").title()
+
+
+def usage_summary(cfg_path=None, path=None, now_epoch=None):
+  """-> (used, cap) for the Settings screen. used None = counter unreadable; cap from the device config."""
+  cap = DEFAULTS["monthly_cap"]
+  try:
+    with open(CFG_FILE if cfg_path is None else cfg_path) as f:
+      cap = settings(json.load(f).get("budget"))["monthly_cap"]
+  except (OSError, ValueError, AttributeError):
+    pass
+  _, used = read_usage(path, now_epoch)
+  return used, int(cap)
 
 
 def settings(cfg_budget) -> dict:
