@@ -140,6 +140,15 @@ function launch {
   # write tmux scrollback to a file
   tmux capture-pane -pq -S-1000 > /tmp/launch_log
 
+  # navse: user-chosen network name (phone page -> Enhet). AGNOS resets kernel.hostname from the serial every
+  # boot and / is read-only, so re-apply the saved one here, before manager starts.
+  if [ -s /data/pnw/hostname ]; then
+    HN="$(tr -cd "a-z0-9-" < /data/pnw/hostname | head -c 32)"
+    if [ -n "$HN" ] && [ "$(hostname)" != "$HN" ]; then
+      sudo sysctl -q kernel.hostname="$HN" && sudo systemctl restart --no-block avahi-daemon avahi-ssh-publish || true
+    fi
+  fi
+
   # start manager
   cd system/manager
   if [ ! -f $DIR/prebuilt ]; then

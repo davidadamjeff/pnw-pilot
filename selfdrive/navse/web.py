@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
-from openpilot.selfdrive.navse import mapbox, store
+from openpilot.selfdrive.navse import hostname, mapbox, store
 from openpilot.selfdrive.navse.route import Route
 
 PORT = 8088
@@ -115,7 +115,8 @@ class Handler(BaseHTTPRequestHandler):
       return self._send(200, {"nav": _mem_get("NavStateSE"), "dest": store.read_json(store.DEST_FILE, None) and
                               {k: v for k, v in store.read_json(store.DEST_FILE, {}).items() if k != "route"},
                               "places": store.places(), "has_key": bool(store.mapbox_key()),
-                              "enabled": Params().get_bool("NavigationSE")})
+                              "enabled": Params().get_bool("NavigationSE"),
+                              "hostname": hostname.current(), "hostname_custom": hostname.saved() is not None})
     if url.path == "/api/search":
       q = urllib.parse.parse_qs(url.query).get("q", [""])[0].strip()
       if len(q) < 2:
@@ -152,11 +153,19 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, {"ok": True})
       if path == "/api/fav":
         return self._send(200, {"places": store.save_favorite(b, b.get("slot"))})
+      if path == "/api/hostname":
+        name = hostname.reset() if b.get("reset") else hostname.set_name(b.get("name"))
+        cloudlog.event("navse_hostname", name=name, reset=bool(b.get("reset")))
+        return self._send(200, {"hostname": name, "url": f"http://{name}.local:{PORT}/?k={store.web_token()}"})
       if path == "/api/fav/delete":
         return self._send(200, {"places": store.delete_favorite(int(b.get("index", -1)))})
     except mapbox.MapboxError as e:
       return self._send(502, {"error": str(e)})
-    except (KeyError, TypeError, ValueError) as e:
+    except (RuntimeError, ValueError) as e:
+      if path == "/api/hostname":
+        return self._send(400, {"error": str(e)})
+      return self._send(400, {"error": type(e).__name__})
+    except (KeyError, TypeError) as e:
       return self._send(400, {"error": type(e).__name__})
     return self._send(404, {"error": "not found"})
 
@@ -197,6 +206,11 @@ button.done{background:#1f5f35;color:#fff}
 <div id="results"></div><div id="choice"></div>
 <h2>Favoriter</h2><div id="favs" class="card"></div>
 <h2>Senaste</h2><div id="recents" class="card"></div>
+<h2>Enhet</h2><div id="dev" class="card"><div class="sub">Nätverksnamn (adressen till den här sidan)</div>
+<div class="row" style="margin-top:6px"><input id="hn" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="t.ex. almis-comma"
+ style="flex:1;font-size:17px"><span class="sub">.local</span></div>
+<div id="hnlink" class="sub" style="margin-top:6px"></div>
+<button class="go" onclick="saveHost(this)">Spara namn</button><button onclick="resetHost(this)">Återställ</button></div>
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s);let picked=null,places={favorites:[],recents:[]},C=[],lastState=null;
@@ -216,7 +230,7 @@ function fmtDist(m){return m>=1000?(m/1000).toFixed(m>=10000?0:1)+" km":Math.rou
 function fmtTime(s){s=Math.round(s/60);return s>=60?Math.floor(s/60)+" h "+(s%60)+" min":s+" min"}
 const ST={active:"Navigerar",routing:"Hämtar rutt…",rerouting:"Räknar om…",waiting_gps:"Väntar på GPS (starta bilen)",
  arrived:"Framme!",error:"Fel",off:"Avstängd",idle:""};
-async function refresh(){try{const j=await api("/api/state");places=j.places;drawPlaces();
+async function refresh(){try{const j=await api("/api/state");places=j.places;drawPlaces();showHost(j);
  const n=j.nav||{},d=j.dest;let h="";
  if(!j.has_key)h+='<div class="err">Ingen Mapbox-nyckel på enheten.</div>';
  if(!j.enabled)h+='<div class="err">Navigation är avstängd i Settings → Toggles.</div>';
@@ -269,6 +283,17 @@ async function fav(slot,btn){const done=busy(btn,"Sparar…");
  catch(e){done(false);toast(e.message,"bad")}}
 async function delFav(i,btn){if(!confirm("Ta bort favoriten?"))return;const done=busy(btn,"");
  try{const j=await api("/api/fav/delete",{index:i});places=j.places;drawPlaces();toast("Favorit borttagen","info")}catch(e){done(false);toast(e.message,"bad")}}
+let hnEdited=false;$("#hn").addEventListener("input",()=>{hnEdited=true;$("#hn").value=$("#hn").value.toLowerCase().replace(/[^a-z0-9-]/g,"")});
+function showHost(j){if(!hnEdited&&document.activeElement!==$("#hn"))$("#hn").value=j.hostname||"";
+ $("#hnlink").innerHTML=`Nu: <b>${esc(j.hostname)}.local</b>`+(j.hostname_custom?" (eget namn)":" (standard)")}
+async function saveHost(btn){const n=$("#hn").value.trim();if(!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(n)){toast("1–32 tecken: a-z, 0-9, bindestreck","bad");return}
+ if(!confirm(`Byta nätverksnamn till ${n}.local? Sidan öppnas på den nya adressen.`))return;const done=busy(btn,"Byter…");
+ try{const j=await api("/api/hostname",{name:n});done(true,"Bytt");hnEdited=false;toast("✅ Nytt namn: "+j.hostname+".local");
+  $("#hnlink").innerHTML=`Ny adress: <a style="color:var(--acc)" href="${esc(j.url)}">${esc(j.url)}</a><br>Spara den som bokmärke.`;
+  setTimeout(()=>{location.href=j.url},3500)}catch(e){done(false);toast(e.message,"bad")}}
+async function resetHost(btn){if(!confirm("Återställa till standardnamnet (comma-…)?"))return;const done=busy(btn,"Återställer…");
+ try{const j=await api("/api/hostname",{reset:true});done(true,"Återställt");hnEdited=false;toast("Namn: "+j.hostname+".local","info");
+  setTimeout(()=>{location.href=j.url},3500)}catch(e){done(false);toast(e.message,"bad")}}
 refresh();setInterval(refresh,3000);
 </script></body></html>"""
 
