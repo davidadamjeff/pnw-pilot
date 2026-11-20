@@ -97,6 +97,16 @@ DESCRIPTIONS = {
     "Hide the CES debug information box (bottom-right while driving: mode/reason, curve %, VTSC state, " +
     "map status). The box shows by default whenever CES is enabled."
   ),
+  "DisableVtsc": tr_noop(
+    "Turn OFF the curve slowdown (Vision Turn Speed Control) while keeping CES Mode's automatic Chill/Experimental " +
+    "switching. With this ON, openpilot no longer slows down by itself before curves -- you brake for curves " +
+    "yourself. The curve slowdown only ever runs while CES Mode is Light or Standard."
+  ),
+  "VtscMapCurves": tr_noop(
+    "Let the curve slowdown also use curves from the map (OpenStreetMap), so it can brake earlier for curves the " +
+    "camera cannot see yet. Turn OFF if it slows down for curves that are not there or too early (map errors). " +
+    "The camera-based curve slowdown keeps working."
+  ),
   "Ces2Core": tr_noop(
     "CES2 decision core (redesign): graded stop-urgency from the model's trajectory endpoint, " +
     "stop-evidence-beats-acceleration precedence at any speed, standstill hold at lights, and " +
@@ -239,6 +249,19 @@ class TogglesLayout(Widget):
       "HideCESDebug": (
         lambda: tr("Hide CES Debug Information"),
         DESCRIPTIONS["HideCESDebug"],
+        "speed_limit.png",
+        False,
+      ),
+      # vtsctoggle-se: VTSC opt-out + the map-curve fold (VtscMapCurves already existed as a param; now on screen).
+      "DisableVtsc": (
+        lambda: tr("Disable Curve Slowdown (VTSC)"),
+        DESCRIPTIONS["DisableVtsc"],
+        "speed_limit.png",
+        False,
+      ),
+      "VtscMapCurves": (
+        lambda: tr("Use Map Curves for Slowdown"),
+        DESCRIPTIONS["VtscMapCurves"],
         "speed_limit.png",
         False,
       ),

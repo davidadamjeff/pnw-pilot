@@ -167,7 +167,13 @@ class VTSCController:
                                f"while this lasts ({self._rain_err_n} failure(s) since the last log)")
             self._rain_err_t = now
             self._rain_err_n = 0
-        self._enabled = self._long_ok and CES.ces_enabled(self._mode)
+        # vtsctoggle-se: VTSC's own opt-OUT (Settings -> Disable Curve Slowdown (VTSC)), on top of the CES selector.
+        # Opt-out on purpose: a missing/unreadable key or a params stub that answers False keeps VTSC exactly as before.
+        try:
+          vtsc_off = bool(self.params.get_bool("DisableVtsc"))
+        except Exception:
+          vtsc_off = False
+        self._enabled = self._long_ok and CES.ces_enabled(self._mode) and not vtsc_off
         self.tune = dict(C.GENTLE_PROFILE) if CES.ces_is_gentle(self._mode) else dict(C.DEFAULT_PROFILE)
         # ces-i90-2pnw (MTSC): fold map curves only when VTSC is enabled AND opted-in via the param
         self._map_curves = self._enabled and bool(self.params.get_bool("VtscMapCurves"))
