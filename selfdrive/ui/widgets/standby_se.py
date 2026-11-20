@@ -169,7 +169,7 @@ class StandbyInfo(Widget):
     self._refresh()
     bold, med = fonts()
     gap = 25
-    nav_h = 300
+    nav_h = 355
     nav = rl.Rectangle(rect.x, rect.y, rect.width, nav_h)
     rl.draw_rectangle_rounded(nav, 0.06, 20, CARD)
     x, w = nav.x + 50, nav.width - 100
@@ -180,11 +180,11 @@ class StandbyInfo(Widget):
       _text(bold, self._link, x, nav.y + 145, ls, GREEN)
     if self._dest:
       d = f"Mål: {self._dest}"
-      bw = 220
-      _text(med, d, x, nav.y + 228, _fit(med, d, 40, w - bw - 20), WHITE)
-      self._cancel_btn.render(rl.Rectangle(x + w - bw, nav.y + 200, bw, 90))
+      bw = 300
+      _text(med, d, x, nav.y + 258, _fit(med, d, 40, w - bw - 30), WHITE)
+      self._cancel_btn.render(rl.Rectangle(x + w - bw, nav.y + 225, bw, 105))
     else:
-      _text(med, "Inget mål valt", x, nav.y + 228, 40, DIM)
+      _text(med, "Inget mål valt", x, nav.y + 258, 40, DIM)
 
     cal = rl.Rectangle(rect.x, rect.y + nav_h + gap, rect.width, max(260.0, rect.height - nav_h - gap))
     rl.draw_rectangle_rounded(cal, 0.06, 20, CARD)
