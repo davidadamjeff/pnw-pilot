@@ -127,7 +127,9 @@ class AugmentedRoadView(CameraView):
     msg.uiDebug.drawTimeMillis = (time.monotonic() - start_draw) * 1000
     self._pm.send('uiDebug', msg)
 
-  def _handle_mouse_press(self, _):
+  def _handle_mouse_press(self, mouse_pos):
+    if self.nav_se_card.handle_tap(mouse_pos):  # navcancel-se: the cancel button next to the nav card
+      return
     if not self._hud_renderer.user_interacting() and self._click_callback is not None:
       self._click_callback()
 

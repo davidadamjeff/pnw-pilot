@@ -94,6 +94,7 @@ class StandbyInfo(Widget):
     super().__init__()
     self.params = Params()
     self._reset_btn = Button(lambda: "Nollställ kalibrering", self._reset_prompt, button_style=ButtonStyle.NORMAL)
+    self._cancel_btn = Button(lambda: "Avbryt", self._cancel_prompt, button_style=ButtonStyle.NORMAL)  # navcancel-se
     self._last = 0.0
     self._link = ""
     self._dest = ""
@@ -148,6 +149,21 @@ class StandbyInfo(Widget):
     gui_app.push_widget(ConfirmDialog("Nollställa kalibreringen? Den lärs in igen de första minuterna du kör.",
                                       "Nollställ", cancel_text="Avbryt", callback=done))
 
+  def _cancel_prompt(self):   # navcancel-se
+    def done(result):
+      if result != DialogResult.CONFIRM:
+        return
+      try:
+        from openpilot.selfdrive.navse import store
+        store.clear_destination()
+        cloudlog.event("standby_se_cancel_nav")
+      except Exception:
+        cloudlog.exception("standby-se: cancel navigation failed")
+      self._last = 0.0
+
+    gui_app.push_widget(ConfirmDialog(f"Avbryta navigeringen till {self._dest}?", "Avbryt navigering",
+                                      cancel_text="Behåll", callback=done))
+
   # ---- render ----------------------------------------------------------------------------------
   def _render(self, rect):
     self._refresh()
@@ -164,7 +180,9 @@ class StandbyInfo(Widget):
       _text(bold, self._link, x, nav.y + 145, ls, GREEN)
     if self._dest:
       d = f"Mål: {self._dest}"
-      _text(med, d, x, nav.y + 228, _fit(med, d, 40, w), WHITE)
+      bw = 220
+      _text(med, d, x, nav.y + 228, _fit(med, d, 40, w - bw - 20), WHITE)
+      self._cancel_btn.render(rl.Rectangle(x + w - bw, nav.y + 200, bw, 90))
     else:
       _text(med, "Inget mål valt", x, nav.y + 228, 40, DIM)
 

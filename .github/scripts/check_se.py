@@ -39,6 +39,8 @@ MARKERS = {
   "system/ui/widgets/network.py": ['tr("comma")'],
   "selfdrive/ui/widgets/prime.py": ["commabackend-se"],
   "selfdrive/haupload_se/hauploadd.py": ["def network_ok", "def candidates", "HOTSPOT_NETS"],
+  "selfdrive/ui/onroad/nav_se_card.py": ["def handle_tap", "def _draw_cancel"],
+  "selfdrive/ui/onroad/augmented_road_view.py": ["self.nav_se_card.handle_tap(mouse_pos)"],
   "selfdrive/navse/navd.py": ["class Navd", "NavStateSE"],
   "selfdrive/navse/route.py": ["class Route", "class Tracker", "def maneuver_target_speed"],
   "selfdrive/navse/web.py": ["def _authed", "store.web_token()"],

@@ -27,6 +27,10 @@ try:
 except Exception:
   _TZ = None
 _SHOW = ("active", "rerouting", "arrived", "routing")
+_BTN = 104          # cancel button (right of the card): tap once to arm, again within _ARM_S to cancel
+_BTN_ARMED_W = 250
+_ARM_S = 4.0
+RED = rl.Color(200, 45, 45, 235)
 
 WHITE = rl.Color(255, 255, 255, 240)
 DIM = rl.Color(170, 178, 174, 230)
@@ -134,6 +138,44 @@ class NavSECard(Widget):
     self._metric = True
     self.font = _load_ttf("Inter-Medium.ttf", gui_app.font(FontWeight.MEDIUM))
     self.font_bold = _load_ttf("Inter-Bold.ttf", gui_app.font(FontWeight.BOLD))
+    self._btn = None            # hit rect of the cancel button while the card is shown
+    self._armed_until = 0.0
+
+  def handle_tap(self, pos) -> bool:
+    """navcancel-se: called by the onroad view on a press. True = the tap was ours (don't toggle the sidebar).
+    Two taps on purpose: one stray touch while driving must not drop the route."""
+    if self._btn is None:
+      return False
+    b = self._btn
+    hit = rl.Rectangle(b.x - 20, b.y - 20, b.width + 40, b.height + 40)
+    if not rl.check_collision_point_rec(pos, hit):
+      return False
+    now = time.monotonic()
+    if now < self._armed_until:
+      self._armed_until = 0.0
+      try:
+        from openpilot.selfdrive.navse import store
+        store.clear_destination()
+        self._st = {}
+        self._btn = None
+      except Exception:
+        pass
+    else:
+      self._armed_until = now + _ARM_S
+    return True
+
+  def _draw_cancel(self, x, y):
+    armed = time.monotonic() < self._armed_until
+    w = _BTN_ARMED_W if armed else _BTN
+    self._btn = rl.Rectangle(x, y, w, _BTN)
+    rl.draw_rectangle_rounded(self._btn, 0.5, 12, RED if armed else BG)
+    if armed:
+      tw = measure_text_cached(self.font_bold, "Avbryt?", 44).x
+      rl.draw_text_ex(self.font_bold, "Avbryt?", rl.Vector2(x + (w - tw) / 2, y + (_BTN - 44) / 2), 44, 0, WHITE)
+    else:
+      c, d = rl.Vector2(x + _BTN / 2, y + _BTN / 2), _BTN * 0.2
+      rl.draw_line_ex(rl.Vector2(c.x - d, c.y - d), rl.Vector2(c.x + d, c.y + d), 9, WHITE)
+      rl.draw_line_ex(rl.Vector2(c.x - d, c.y + d), rl.Vector2(c.x + d, c.y - d), 9, WHITE)
 
   def _update_state(self):
     now = time.monotonic()
@@ -169,9 +211,11 @@ class NavSECard(Widget):
   def _render(self, rect):
     st = self._st
     if not st or st.get("state") not in _SHOW:
+      self._btn = None
       return
     x, y = rect.x + _X, rect.y + _Y
     rl.draw_rectangle_rounded(rl.Rectangle(x, y, _W, _H), 0.15, 10, BG)
+    self._draw_cancel(x + _W + 16, y)
     tx = x + _PAD * 2 + _ICON
     tw = _W - (tx - x) - _PAD
     state = st.get("state")
