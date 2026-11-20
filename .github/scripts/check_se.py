@@ -45,7 +45,7 @@ MARKERS = {
   "selfdrive/controls/lib/desire_helper.py": ["def nav_desire_for", "nav_turn"],
   "selfdrive/ui/onroad/augmented_road_view.py": ["NavSECard"],
   "system/manager/process_config.py": ['"navd_se"', '"navweb_se"'],
-  "selfdrive/controls/lib/vtsc_pnw/vtsc_controller.py": ['get_bool("DisableVtsc")'],
+  "selfdrive/controls/lib/vtsc_pnw/vtsc_controller.py": ['get("DisableVtsc")'],
   "common/params_keys.h": ['"DisableVtsc"', '"PoliceReports"', '"AccidentReports"', '"HazardReports"', '"RoadClosureReports"', '"NavigationSE"', '"NavStateSE"', '"NavTurnDesires"'],
   "selfdrive/ui/layouts/settings/toggles.py": ['"PoliceReports": (', '"HazardReports": (', "usage_summary"],
   ".gitmodules": ["https://github.com/dirkpetersen/pnw-panda.git", "https://github.com/dirkpetersen/pnw-opendbc.git"],

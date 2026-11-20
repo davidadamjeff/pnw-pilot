@@ -30,6 +30,7 @@ CFG_FILE = f"{BASE}/config.json"
 STATE_FILE = f"{BASE}/state.json"
 STATUS_FILE = f"{BASE}/status.json"
 KIND_ORDER = ("qlog.zst", "rlog.zst", "qcamera.ts")   # small and useful first
+MAX_FAILS = 3          # per file per run; a file that keeps failing is skipped until the next restart
 SETTLE_S = 120          # a segment is final once nothing in it changed for this long
 IDLE_S = 300            # re-scan interval when everything is uploaded
 STATUS_EVERY_S = 120
@@ -131,18 +132,12 @@ def candidates(root, wanted, done, now=None):
         size = os.path.getsize(p)
       except OSError:
         continue
+      if size == 0:          # empty file from an aborted segment: nothing to keep
+        continue
       rel = f"{name}/{kind}"
       if done.get(rel) != size:
         out.append((rel, p, size))
   return out
-
-
-def sha256_file(path):
-  h = hashlib.sha256()
-  with open(path, "rb") as f:
-    for chunk in iter(lambda: f.read(1 << 20), b""):
-      h.update(chunk)
-  return h.hexdigest()
 
 
 class Uploader:
@@ -154,6 +149,7 @@ class Uploader:
     self.base = None
     self.last_status = 0.0
     self.error = ""
+    self.failures = {}   # rel -> failed attempts this run; skipped after MAX_FAILS
 
   def endpoint(self, base, cfg):
     return f"{base.rstrip('/')}/api/webhook/{cfg['webhook_id']}"
@@ -175,12 +171,16 @@ class Uploader:
     return None
 
   def upload(self, cfg, rel, path, size):
-    sha = sha256_file(path)
+    # Send bytes, not the file object: requests falls back to chunked encoding for a file it can't size
+    # (e.g. an empty qlog), and HA rejects chunked + Content-Length. Logs are a few MB, so memory is fine.
     with open(path, "rb") as f:
-      r = self.s.put(self.endpoint(self.base, cfg), params={"path": rel}, data=f,
-                     headers={"X-Size": str(size), "X-Sha256": sha, "Content-Type": "application/octet-stream",
-                              "Content-Length": str(size)},
-                     timeout=(5, 300))
+      body = f.read()
+    if len(body) != size:
+      raise RuntimeError("file changed while reading")
+    sha = hashlib.sha256(body).hexdigest()
+    r = self.s.put(self.endpoint(self.base, cfg), params={"path": rel}, data=body,
+                   headers={"X-Size": str(size), "X-Sha256": sha, "Content-Type": "application/octet-stream"},
+                   timeout=(5, 300))
     if r.status_code != 200:
       raise RuntimeError(f"HTTP {r.status_code} {r.text[:120]}")
     self.done[rel] = size
@@ -232,7 +232,7 @@ def main():
         backoff = min(backoff * 2, 900)
         continue
       up.error = ""
-    pending = candidates(root, kinds(params), up.done)
+    pending = [p for p in candidates(root, kinds(params), up.done) if up.failures.get(p[0], 0) < MAX_FAILS]
     if not pending:
       up.status(cfg, "up to date", pending, "wifi")
       time.sleep(IDLE_S)
@@ -245,6 +245,7 @@ def main():
       up.upload(cfg, rel, path, size)
       backoff = 30.0
     except (OSError, RuntimeError, requests.RequestException) as e:
+      up.failures[rel] = up.failures.get(rel, 0) + 1
       up.error = f"{rel}: {e}"[:200]
       cloudlog.warning(f"haupload-se: {up.error}")
       up.status(cfg, "error", pending, "wifi")
