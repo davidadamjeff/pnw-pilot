@@ -69,6 +69,12 @@ def navse(started: bool, params: Params, CP: car.CarParams) -> bool:   # navse: 
   except Exception:
     return False
 
+def haupload(started: bool, params: Params, CP: car.CarParams) -> bool:   # haupload-se: logs -> Home Assistant
+  try:
+    return params.get_bool("HaUploadSE")
+  except Exception:
+    return False
+
 def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
   return True
 
@@ -148,6 +154,7 @@ procs = [
   PythonProcess("mapd_configd", "system.mapd.mapd_configd", always_run, enabled=TICI, restart_if_crash=True),
   PythonProcess("location_servicesd", "system.location_services.location_servicesd", always_run, enabled=TICI),
   PythonProcess("navd_se", "selfdrive.navse.navd", navse, enabled=TICI),        # navse: display/advice only, NON_ESSENTIAL
+  PythonProcess("hauploadd_se", "selfdrive.haupload_se.hauploadd", haupload, enabled=TICI),  # haupload-se: NON_ESSENTIAL, Wi-Fi only
   PythonProcess("navweb_se", "selfdrive.navse.web", navse, enabled=TICI),       # navse: phone destination page :8088  # location2pnw: display-only, NON_ESSENTIAL
   PythonProcess("tombstoned", "system.tombstoned", always_run, enabled=not PC),
   # update2pnw: run the updater onroad too (stock is only_offroad) — downloads/finalize only STAGE

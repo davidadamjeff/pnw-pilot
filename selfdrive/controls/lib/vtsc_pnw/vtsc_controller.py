@@ -168,9 +168,10 @@ class VTSCController:
             self._rain_err_t = now
             self._rain_err_n = 0
         # vtsctoggle-se: VTSC's own opt-OUT (Settings -> Disable Curve Slowdown (VTSC)), on top of the CES selector.
-        # Opt-out on purpose: a missing/unreadable key or a params stub that answers False keeps VTSC exactly as before.
+        # Opt-out on purpose: a missing/unreadable key keeps VTSC exactly as before. Read with get() (a BOOL key
+        # returns True/False) so params stubs whose get_bool answers True for every key don't switch VTSC off.
         try:
-          vtsc_off = bool(self.params.get_bool("DisableVtsc"))
+          vtsc_off = self.params.get("DisableVtsc") in (True, b"1", "1")
         except Exception:
           vtsc_off = False
         self._enabled = self._long_ok and CES.ces_enabled(self._mode) and not vtsc_off

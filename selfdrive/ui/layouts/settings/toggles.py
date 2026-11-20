@@ -191,6 +191,13 @@ DESCRIPTIONS = {
     "Show Waze hazards ahead: stopped cars, objects, potholes, roadwork, lane closures and weather. Same " +
     "lookup as police reports, no extra quota. Display only."
   ),
+  "HaUploadSE": tr_noop(
+    "Copy drive logs (qlog and rlog) to your Home Assistant when the comma is on Wi-Fi (never on the phone hotspot). " +
+    "Keeps track of what is already there, so nothing is sent twice."
+  ),
+  "HaUploadCamera": tr_noop(
+    "Also copy the low-resolution road video (qcamera, about 2 MB per minute) to Home Assistant."
+  ),
   "NavigationSE": tr_noop(
     "Turn-by-turn navigation (Mapbox, Swedish voice text, live traffic). Pick the destination on your phone: open " +
     "the address below while the phone is on the same Wi-Fi or is the car's hotspot. The route shows top-left while driving."
@@ -386,6 +393,18 @@ class TogglesLayout(Widget):
       "PoliceReports": (
         lambda: tr("Police Reports (Waze)"),
         DESCRIPTIONS["PoliceReports"],
+        "speed_limit.png",
+        False,
+      ),
+      "HaUploadSE": (
+        lambda: tr("Upload Logs to Home Assistant"),
+        DESCRIPTIONS["HaUploadSE"],
+        "speed_limit.png",
+        False,
+      ),
+      "HaUploadCamera": (
+        lambda: tr("Include Low-Res Video in Upload"),
+        DESCRIPTIONS["HaUploadCamera"],
         "speed_limit.png",
         False,
       ),
@@ -640,6 +659,29 @@ class TogglesLayout(Widget):
             _nav_cache["txt"] = " " + tr("(no network: connect Wi-Fi or a hotspot to see the address)")
         return (base() if callable(base) else tr(base)) + _nav_cache["txt"]
       self._toggles["NavigationSE"].set_description(_nav_desc)
+
+    # haupload-se: live upload status under the Home Assistant toggle, refreshed every 10 s.
+    if "HaUploadSE" in self._toggles:
+      _ha_cache = {"t": 0.0, "txt": ""}
+
+      def _ha_desc(base=self._toggles["HaUploadSE"]._description):
+        now = time.monotonic()
+        if now - _ha_cache["t"] > 10.0:
+          _ha_cache["t"] = now
+          try:
+            import json
+            with open("/data/pnw/haupload/status.json") as f:
+              st = json.load(f)
+            txt = " " + tr("Status: {}").format(st.get("state", "?"))
+            if "pending_files" in st:
+              txt += ", " + tr("{} files waiting").format(st["pending_files"])
+            if st.get("uploaded_session"):
+              txt += ", " + tr("{} sent since start").format(st["uploaded_session"])
+            _ha_cache["txt"] = txt + "."
+          except Exception:
+            _ha_cache["txt"] = ""
+        return (base() if callable(base) else tr(base)) + _ha_cache["txt"]
+      self._toggles["HaUploadSE"].set_description(_ha_desc)
 
     self._scroller = Scroller(list(self._toggles.values()), line_separator=True, spacing=0)
 

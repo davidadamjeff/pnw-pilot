@@ -1,0 +1,6 @@
+{
+  "config": {
+    "step": {"user": {"title": "comma logs", "description": "The comma uploads its drive logs to this webhook id. Copy it to /data/pnw/haupload/config.json on the comma.", "data": {"webhook_id": "Webhook id"}}},
+    "abort": {"already_configured": "Already set up"}
+  }
+}

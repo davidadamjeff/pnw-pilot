@@ -38,6 +38,7 @@ MARKERS = {
   "system/loggerd/uploader.py": ["def _comma_backend", "if self._comma:"],
   "system/ui/widgets/network.py": ['tr("comma")'],
   "selfdrive/ui/widgets/prime.py": ["commabackend-se"],
+  "selfdrive/haupload_se/hauploadd.py": ["def network_ok", "def candidates", "HOTSPOT_NETS"],
   "selfdrive/navse/navd.py": ["class Navd", "NavStateSE"],
   "selfdrive/navse/route.py": ["class Route", "class Tracker", "def maneuver_target_speed"],
   "selfdrive/navse/web.py": ["def _authed", "store.web_token()"],

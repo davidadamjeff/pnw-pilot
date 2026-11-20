@@ -31,6 +31,8 @@ Wiring used here: xnor box port 1 → comma main, port 2 → comma aux. pandad f
 | **Route speed control** | Reduce-only slowdown before turns (25 km/h), roundabouts (30), U-turns (18); a SET+ dismisses that maneuver; gas overrides. | Slow Down for Route Turns — on (needs Auto speed reduce ≠ Off) | `speedadjust_controller._nav_cap` |
 | **Turn hints to the model** | `turnLeft/Right` below 50 km/h only with **your** matching blinker; `keepLeft/Right` at exits/forks only while you nudge the wheel; a confirmed turn blocks a blinker lane change. Mirrors StarPilot. | Route Turn Hints to Model (Experimental) — **off** | `desire_helper.nav_desire_for` |
 | **Standby screen** | Clock, Swedish date and week; phone-page link and destination; calibration state with **Nollställ kalibrering**. | — | `ui/widgets/standby_se.py` |
+| **Curve slowdown switches** | Turn VTSC off on its own (CES keeps switching), or let it ignore map curves and use only the camera. | Disable Curve Slowdown (VTSC) — off; Use Map Curves for Slowdown — on | `vtsc_controller._read_enabled` |
+| **Logs to Home Assistant** | On unmetered Wi-Fi (never the iPhone hotspot) copies qlog, rlog and optionally qcamera of finished segments to HA, newest first, each verified by size + SHA-256. HA's file list is the record of what is there, so nothing goes twice. HA sensors show last upload, files waiting, stored GB and last check-in. | Upload Logs to Home Assistant — on; Include Low-Res Video in Upload — on | `selfdrive/haupload_se/`, HA side `tools/homeassistant/comma_logs` |
 | **Upstream watcher** | Daily check of StarPilot, comma, sunnypilot, xnor-dev / xnor opendbc and Dirk's location services; a change behind one of these features opens an issue labelled `upstream-watch`. | `.github/upstream-watch.json` | `.github/workflows/watch-upstreams.yaml` |
 | **Dirk sync** | Daily 03:17 UTC merge of `dirk/3testpnw`; pushes when `check_se.py` passes, otherwise opens a `dirk-sync/<sha>` PR. | — | `.github/workflows/sync-dirk.yaml` |
 
@@ -45,9 +47,17 @@ Wiring used here: xnor box port 1 → comma main, port 2 → comma aux. pandad f
 | `/data/pnw/nav/web_token` | phone-page key |
 | `/data/pnw/nav/destination.json`, `places.json`, `last_pos.json` | active destination, favourites/recents, last position |
 | `/data/pnw/hostname` | chosen network name (re-applied at boot by `launch_chffrplus.sh`) |
+| `/data/pnw/haupload/config.json` (600) | `{"webhook_id":"…","urls":["http://<ha-ip>:8123","https://<external>"]}` (first that answers wins) |
+| `/data/pnw/haupload/state.json`, `status.json` | uploaded files (cache of HA's list), current status |
 | `/data/pnw/dm.json` | unlocks the Relaxed driver-monitoring option |
 
 `launch_chffrplus.sh` also redirects TCP 80 → 8088 (iptables-legacy, IPv4) so the phone page needs no port.
+
+### Home Assistant receiver
+
+Copy `tools/homeassistant/comma_logs` to HA's `config/custom_components/`, restart HA, add the **comma logs** integration
+(it proposes a random webhook id), and put that id in the comma's `/data/pnw/haupload/config.json`. Files land in
+HA's `/media/comma/<route--segment>/`.
 
 ## Tests
 
@@ -55,7 +65,7 @@ Wiring used here: xnor box port 1 → comma main, port 2 → comma aux. pandad f
 export PYTHONPATH=/data/openpilot:/data/pnw/agnos19-compat/site-packages
 python3 -m pytest -c /dev/null -o addopts="" selfdrive/navse/tests \
   selfdrive/controls/lib/tests/test_navse_desires.py selfdrive/controls/lib/speedadjust_pnw/tests \
-  selfdrive/controls/lib/tests/test_desire_helper.py
+  selfdrive/controls/lib/tests/test_desire_helper.py selfdrive/haupload_se/tests
 python3 system/location_services/tests/test_police_budget.py
 python3 .github/scripts/check_se.py
 ```
