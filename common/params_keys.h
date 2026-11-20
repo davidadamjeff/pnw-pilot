@@ -284,7 +284,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"HazardReports", {PERSISTENT, BOOL, "1"}},       // wazetypes-se: Waze hazards (own key, same lookup). Default ON.
     {"RoadClosureReports", {PERSISTENT, BOOL, "1"}},
     {"HaUploadSE", {PERSISTENT, BOOL, "1"}},        // haupload-se: copy qlog/rlog to Home Assistant on unmetered Wi-Fi. Needs /data/pnw/haupload/config.json.
-    {"HaUploadCamera", {PERSISTENT, BOOL, "1"}},    // haupload-se: also copy qcamera.ts (low-res road video, ~2 MB/min).
+    {"HaUploadCamera", {PERSISTENT, BOOL, "0"}},    // haupload-se: also copy qcamera.ts (low-res road video, ~2 MB/min). Default OFF.
     {"NavigationSE", {PERSISTENT, BOOL, "1"}},      // navse: Mapbox turn-by-turn + phone destination page. Default ON (idle without a destination).
     {"NavSpeedControl", {PERSISTENT, BOOL, "1"}},   // navse: slow for route turns/roundabouts (reduce-only, needs AutoSpeedReduce != Off). Default ON.
     {"NavTurnDesires", {PERSISTENT, BOOL, "0"}},    // navse: route turn/keep hints to the driving model (driver-confirmed). Default OFF.
