@@ -1,7 +1,7 @@
 {
  "StarPilotHQ/StarPilot@stable:selfdrive/controls/lib/desire_helper.py": {
-  "date": "2026-09-28T18:51:49Z",
-  "sha": "96ef704da7fce3fc184c0f11f6c4072eb93029c0"
+  "date": "2026-06-22T01:49:46Z",
+  "sha": "5edc0bd89d0830bc1ac86ee923d1d08d2915b770"
  },
  "StarPilotHQ/StarPilot@stable:starpilot/controls/lib": {
   "date": "2026-10-09T03:55:06Z",
