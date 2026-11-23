@@ -192,8 +192,12 @@ DESCRIPTIONS = {
     "lookup as police reports, no extra quota. Display only."
   ),
   "HaUploadSE": tr_noop(
-    "Copy drive logs (qlog and rlog) to your Home Assistant when the comma is on Wi-Fi (never on the phone hotspot). " +
+    "Copy drive logs (qlog and rlog) to your Home Assistant whenever the comma has a connection. " +
     "Keeps track of what is already there, so nothing is sent twice."
+  ),
+  "HaUploadAnyNetwork": tr_noop(
+    "Upload on any connection, including the phone hotspot and metered networks (about 10 MB per minute of driving). " +
+    "Off = only on unmetered Wi-Fi."
   ),
   "HaUploadCamera": tr_noop(
     "Also copy the low-resolution road video (qcamera, about 2 MB per minute) to Home Assistant."
@@ -399,6 +403,12 @@ class TogglesLayout(Widget):
       "HaUploadSE": (
         lambda: tr("Upload Logs to Home Assistant"),
         DESCRIPTIONS["HaUploadSE"],
+        "speed_limit.png",
+        False,
+      ),
+      "HaUploadAnyNetwork": (
+        lambda: tr("Upload on Any Connection (Hotspot Too)"),
+        DESCRIPTIONS["HaUploadAnyNetwork"],
         "speed_limit.png",
         False,
       ),

@@ -15,11 +15,25 @@ def _seg(root, name, files, age=1000):
 
 
 def test_network_gate():
+  # any network (default): Wi-Fi, metered, hotspot all fine; no link / no IP never
+  assert hu.network_ok(hu.WIFI, True, "172.20.10.3")
   assert hu.network_ok(hu.WIFI, False, "192.168.0.162")
-  assert not hu.network_ok(hu.WIFI, True, "192.168.0.162")
-  assert not hu.network_ok(hu.WIFI, False, "172.20.10.3")   # iPhone hotspot
-  assert not hu.network_ok(hu.WIFI + 1, False, "192.168.0.162")
+  assert not hu.network_ok(hu.NONE, False, "192.168.0.162")
   assert not hu.network_ok(hu.WIFI, False, None)
+  # strict: unmetered Wi-Fi only, never the iPhone hotspot
+  assert hu.network_ok(hu.WIFI, False, "192.168.0.162", False)
+  assert not hu.network_ok(hu.WIFI, True, "192.168.0.162", False)
+  assert not hu.network_ok(hu.WIFI, False, "172.20.10.3", False)
+  assert not hu.network_ok(hu.WIFI + 1, False, "192.168.0.162", False)
+
+
+def test_any_network_param_missing_defaults_on():
+  class P:
+    def get_bool(self, k):
+      raise KeyError(k)
+  assert hu.any_network(P())
+  assert hu.net_name(hu.WIFI, "172.20.10.3") == "hotspot"
+  assert hu.net_name(hu.WIFI, "192.168.0.162") == "wifi"
 
 
 def test_candidates_order_settle_lock_done(tmp_path):

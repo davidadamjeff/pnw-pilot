@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""haupload-se: copy drive logs (qlog, rlog, optionally qcamera) to Home Assistant over Wi-Fi.
+"""haupload-se: copy drive logs (qlog, rlog, optionally qcamera) to Home Assistant whenever there is a connection.
 
 Receiver: the `comma_logs` custom integration in HA (copy in tools/homeassistant/comma_logs).
 Config (not in git): /data/pnw/haupload/config.json  {"webhook_id": "...", "urls": ["http://192.168.0.199:8123", ...]}
 State: /data/pnw/haupload/state.json  {"route--seg/file": size}; HA's manifest is the source of truth,
 so a lost state file only costs one manifest fetch, never a re-upload.
 
-Uploads only on unmetered Wi-Fi (not on the iPhone hotspot), skips segments still being written,
+Uploads on any connection (toggle HaUploadAnyNetwork, default on; off = unmetered Wi-Fi only, never the
+iPhone hotspot), skips segments still being written,
 verifies every file with size + sha256 on the HA side, and posts a status (pending count) to HA.
 Display/telemetry only: touches nothing in the driving stack.
 """
@@ -36,6 +37,8 @@ IDLE_S = 300            # re-scan interval when everything is uploaded
 STATUS_EVERY_S = 120
 HOTSPOT_NETS = (ipaddress.ip_network("172.20.10.0/28"),)   # iPhone personal hotspot
 WIFI = log.DeviceState.NetworkType.wifi
+NONE = log.DeviceState.NetworkType.none
+NET_NAMES = {0: "none", 1: "wifi", 2: "cell2G", 3: "cell3G", 4: "cell4G", 5: "cell5G", 6: "ethernet"}
 
 
 def load_json(path, default):
@@ -66,15 +69,36 @@ def local_ip():
     s.close()
 
 
-def network_ok(network_type, metered, ip):
-  """Unmetered Wi-Fi only, and never the phone hotspot (NM can't always tell it's metered)."""
-  if network_type != WIFI or metered or not ip:
+def network_ok(network_type, metered, ip, any_network=True):
+  """any_network (default): upload on whatever link the comma has -- Wi-Fi, phone hotspot or metered.
+  Otherwise only unmetered Wi-Fi, never the phone hotspot (NM can't always tell it's metered)."""
+  if not ip or network_type == NONE:
+    return False
+  if any_network:
+    return True
+  if network_type != WIFI or metered:
     return False
   try:
     addr = ipaddress.ip_address(ip)
   except ValueError:
     return False
   return not any(addr in n for n in HOTSPOT_NETS)
+
+
+def any_network(params):
+  try:
+    return bool(params.get_bool("HaUploadAnyNetwork"))
+  except Exception:      # key not built yet on this device: the owner's choice is "always upload"
+    return True
+
+
+def net_name(network_type, ip):
+  try:
+    if ip and any(ipaddress.ip_address(ip) in n for n in HOTSPOT_NETS):
+      return "hotspot"
+  except ValueError:
+    pass
+  return NET_NAMES.get(int(network_type), "?")
 
 
 def kinds(params):
@@ -219,9 +243,9 @@ def main():
       continue
     ds = sm["deviceState"]
     ip = local_ip()
-    if not network_ok(ds.networkType, ds.networkMetered, ip):
+    if not network_ok(ds.networkType, ds.networkMetered, ip, any_network(params)):
       up.base = None
-      save_json(STATUS_FILE, {"state": "waiting for Wi-Fi", "t": time.time(), "uploaded_session": up.uploaded_session})
+      save_json(STATUS_FILE, {"state": "waiting for network", "t": time.time(), "uploaded_session": up.uploaded_session})
       time.sleep(15)
       continue
     if up.base is None:
@@ -232,14 +256,15 @@ def main():
         backoff = min(backoff * 2, 900)
         continue
       up.error = ""
+    net = net_name(ds.networkType, ip)
     pending = [p for p in candidates(root, kinds(params), up.done) if up.failures.get(p[0], 0) < MAX_FAILS]
     if not pending:
-      up.status(cfg, "up to date", pending, "wifi")
+      up.status(cfg, "up to date", pending, net)
       time.sleep(IDLE_S)
       up.base = None          # re-check manifest + nearest URL next round
       continue
     if time.monotonic() - up.last_status > STATUS_EVERY_S:
-      up.status(cfg, "uploading", pending, "wifi")
+      up.status(cfg, "uploading", pending, net)
     rel, path, size = pending[0]
     try:
       up.upload(cfg, rel, path, size)
@@ -248,7 +273,7 @@ def main():
       up.failures[rel] = up.failures.get(rel, 0) + 1
       up.error = f"{rel}: {e}"[:200]
       cloudlog.warning(f"haupload-se: {up.error}")
-      up.status(cfg, "error", pending, "wifi")
+      up.status(cfg, "error", pending, net)
       up.base = None
       time.sleep(backoff)
       backoff = min(backoff * 2, 900)
