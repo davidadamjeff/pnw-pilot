@@ -1,6 +1,8 @@
 # Daily: merge Dirk's 3testpnw into david/3testpnw-se, check that our Swedish changes survived, and push only
 # if everything is green (the car then updates as usual). On a conflict or a failed check nothing reaches the
-# car: a PR is opened in this fork instead (GitHub emails you).
+# car: a PR is opened in this fork instead (GitHub emails you). If Dirk changed a workflow file, GitHub won't let
+# this job push it (no `workflows` permission for the job token): one issue is opened instead and the run stays
+# green, so it doesn't fail (and email) every day. Merge that one by hand over SSH.
 name: sync from dirk
 
 on:
@@ -11,6 +13,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 concurrency: sync-dirk
 
@@ -64,7 +67,21 @@ jobs:
 
       - name: Push to the car's branch
         if: steps.merge.outputs.status == 'merged' && steps.check.outputs.ok == 'true'
-        run: git push origin "HEAD:$BRANCH"
+        run: |
+          if git push origin "HEAD:$BRANCH" 2> /tmp/push.txt; then cat /tmp/push.txt; exit 0; fi
+          cat /tmp/push.txt
+          if ! grep -q "without \`workflows\` permission" /tmp/push.txt; then exit 1; fi
+          # Dirk changed a workflow file: the job token may not push those. One issue per upstream commit, run stays green.
+          up="${{ steps.merge.outputs.upstream }}"
+          title="Sync from Dirk ($up) changes workflow files: merge by hand"
+          if gh issue list --state open --search "in:title \"$title\"" --json number --jq 'length' | grep -q '^0$'; then
+            { echo "Dirk's \`$UPSTREAM_BRANCH\` ($up) merges cleanly and the checks pass, but it changes GitHub workflow files,"
+              echo "which this job is not allowed to push. Nothing reached the car."; echo
+              echo "Changed workflow files:"
+              git diff --name-only "${{ steps.merge.outputs.old }}" HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/'; echo
+              echo "Ask Claude to merge dirk/$UPSTREAM_BRANCH by hand (push over SSH), then close this issue."; } > /tmp/body.md
+            gh issue create --title "$title" --body-file /tmp/body.md
+          fi
 
       - name: Open a PR instead (conflict or failed check)
         if: steps.merge.outputs.status == 'conflict' || (steps.merge.outputs.status == 'merged' && steps.check.outputs.ok != 'true')
